@@ -1,0 +1,3590 @@
+#LyX 1.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 221
+\textclass literate-article
+\begin_preamble
+\usepackage[dvips,colorlinks=true,linkcolor=blue]{hyperref}
+\end_preamble
+\language german
+\inputencoding auto
+\fontscheme ae
+\graphics default
+\paperfontsize default
+\spacing single 
+\papersize Default
+\paperpackage widemarginsa4
+\use_geometry 1
+\use_amsmath 0
+\use_natbib 0
+\use_numerical_citations 0
+\paperorientation portrait
+\leftmargin 0.5in
+\rightmargin 0.5in
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\defskip medskip
+\quotes_language german
+\quotes_times 2
+\papercolumns 2
+\papersides 1
+\paperpagestyle fancy
+
+\layout Title
+
+b16 --- Ein Forth Prozessor im FPGA
+\layout Author
+
+
+\noun on 
+Bernd Paysan
+\layout Standard
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+lhead{
+\end_inset 
+
+b16 --- Ein Forth Prozessor im FPGA
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+}
+\backslash 
+chead{
+\end_inset 
+
+
+\noun on 
+Bernd Paysan
+\noun default 
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+}
+\end_inset 
+
+
+\layout Abstract
+
+Dieser Artikel präsentiert Architektur und Implementierung des b16 Stack-Prozess
+ors.
+ Dieser Prozessor ist von 
+\noun on 
+Chuck Moore
+\noun default 
+s neusten Forth-Prozessoren inspiriert.
+ Das minimalistische Design paßt in kleine FPGAs und ASICs und ist ideal
+ geeignet für Applikationen, die sowohl Steuerung als auch Berechnungen
+ benötigen.
+ Die synthetisierbare Implementierung erfolgt in Verilog.
+\layout Abstract
+
+rev 1.0: Ursprüngliche Version
+\layout Abstract
+
+rev 1.1: Interrupts
+\layout Section*
+
+Einleitung
+\layout Standard
+
+Minimalistische CPUs können in vielen verschiedenen Designs benutzt werden.
+ Eine State-Maschine ist oft zu kompliziert und zu aufwendig zu entwickeln,
+ wenn es mehr als ein paar wenige States gibt.
+ Ein Programm mit Subroutinen kann viel komplexere Aufgaben erledigen, und
+ ist dabei noch einfacher zu entwickeln.
+ Auch belegen ROM- und RAM-Blöcke viel weniger Platz auf dem Silizium als
+ ,,Random Logic
+\begin_inset Quotes grd
+\end_inset 
+
+.
+ Das gilt auch für FPGAs, bei denen ,,Block RAM
+\begin_inset Quotes grd
+\end_inset 
+
+ im Gegensatz zu Logik-Elementen reichlich vorhanden ist.
+\layout Standard
+
+Die Architektur lehnt sich an den c18 von 
+\noun on 
+Chuck Moore
+\noun default 
+ 
+\begin_inset LatexCommand \cite{c18}
+
+\end_inset 
+
+ an.
+ Der exakte Befehlsmix ist etwas anders, ich habe zugunsten von Divisionsstep
+ und Forth-üblicher Logikbefehle auf 
+\family typewriter 
+2*
+\family default 
+ und 
+\family typewriter 
+2/
+\family default 
+ verzichtet; diese Befehle lassen sich aber als kurzes Makro implementieren.
+ Außerdem ist diese Architektur byte-adressiert.
+\layout Standard
+
+Das ursprüngliche Konzept (das auch schon synthetisierbar war, und ein kleines
+ Beispielprogramm ausführen konnte) war an einem Nachmittag geschrieben.
+ Die aktuelle Fassung ist etwas beschleunigt, und läuft auch tatsächlich
+ in einem Alterea Flex10K30E auf einem FPGA-Board von 
+\noun on 
+Hans Eckes
+\noun default 
+.
+ Die Größe und Geschwindigkeit des Prozessors kann man damit auch abschätzen.
+\layout Description
+
+Flex10K30E Etwa 600 LCs, die Einheit für Logik-Zellen im Altera
+\begin_inset Foot
+collapsed true
+
+\layout Standard
+
+Eine Logik-Zelle kann eine Logik-Funktion mit vier Inputs und einem Output
+ berechnen, oder einen Voll-Addierer, und enthält darüber hinaus noch ein
+ Flip-Flop.
+\end_inset 
+
+.
+ Die Logik zur Ansteuerung des Eval-Boards braucht nochmal 100 LCs.
+ Im langsamsten Modell könnte man etwas mehr als 25MHz erreichen.
+\layout Description
+
+Xfab\SpecialChar ~
+0.6µ 
+\begin_inset Formula $\sim$
+\end_inset 
+
+1mm² mit 8 Stack-Elementen, das ist eine Technologie mit nur 2 Metal-Lagen.
+\layout Description
+
+TSMC\SpecialChar ~
+0.5µ 
+\begin_inset Formula $<$
+\end_inset 
+
+0.4mm² mit 8 Stack-Elementen, diese Technologie hat 3 Metal-Lagen.
+ Mit einer etwas optimierten ALU kommt man mit der 5V-Library auf 100MHz.
+\layout Standard
+
+Die ganze Entwicklung (bis auf das Board-Layout und Testsynthese für ASIC-Prozes
+se) ist mit freien oder umsonsten Tools geschehen.
+ Icarus Verilog ist in der aktuellen Version für Projekte dieser Größenordnung
+ ganz brauchbar, und Quartus II Web Edition ist zwar ein großer Brocken
+ zum Downloaden, kostet aber sonst nichts (Pferdefuß: Windows NT, die Versionen
+ für richtige Betriebssysteme kosten richtig Geld).
+ 
+\layout Standard
+
+Ein paar Sätze zu Verilog: Verilog ist eine C-ähnliche Sprache, die allerdings
+ auf den Zweck zugeschnitten ist, Logik zu simulieren, und synthetisierbaren
+ Code zu geben.
+ So sind die Variablen Bits und Bitvektoren, und die Zuweisungen sind typischerw
+eise non-blocking, d.h.
+ bei Zuweisungen werden zunächst erst einmal alle rechten Seiten berechnet,
+ und die linken Seiten erst anschließend verändert.
+ Auch gibt es in Verilog Ereignisse, wie das Ändern von Werten oder Taktflanken,
+ auf die man einen Block warten lassen kann.
+\layout Section
+
+Übersicht über die Architectur
+\layout Standard
+
+Die Kernkomponenten sind
+\layout Itemize
+
+Eine ALU 
+\layout Itemize
+
+Ein Datenstack mit top und next of stack (T und N) als Inputs für die ALU
+ 
+\layout Itemize
+
+Ein Returnstack, bei dem der top of return stack (R) als Adresse genutzt
+ werden kann 
+\layout Itemize
+
+Ein Instruction Pointer P 
+\layout Itemize
+
+Ein Adreßregister A 
+\layout Itemize
+
+Ein Adreßlatch 
+\family typewriter 
+addr
+\family default 
+, um externen Speicher zu adressieren 
+\layout Itemize
+
+Ein Befehlslatch I.
+ 
+\layout Standard
+
+Ein Blockdiagram zeigt Abbildung 
+\begin_inset LatexCommand \ref{blockdiagram}
+
+\end_inset 
+
+.
+\layout Standard
+
+
+\begin_inset Float figure
+wide false
+collapsed false
+
+\layout Standard
+\align center 
+
+\begin_inset Graphics
+	filename b16.eps
+	display color
+	width 100col%
+
+\end_inset 
+
+
+\layout Caption
+
+Block Diagram
+\begin_inset LatexCommand \label{blockdiagram}
+
+\end_inset 
+
+
+\end_inset 
+
+
+\layout Subsection
+
+Register
+\layout Standard
+
+Neben den für den Benutzer sichtbaren Latches gibt es auch noch Steuerlatches
+ für das externe RAM (
+\family typewriter 
+rd
+\family default 
+ und 
+\family typewriter 
+w
+\family default 
+r) und Stackpointer (
+\family typewriter 
+sp
+\family default 
+ und 
+\family typewriter 
+rp
+\family default 
+), Carry 
+\family typewriter 
+c
+\family default 
+ und den Wert 
+\family typewriter 
+incby
+\family default 
+, um den 
+\family typewriter 
+addr
+\family default 
+ erhöht wird.
+\layout Standard
+\added_space_top medskip \added_space_bottom medskip \align center 
+
+\begin_inset  Tabular
+<lyxtabular version="3" rows="12" columns="2">
+<features>
+<column alignment="center" valignment="top" leftline="true" width="0pt">
+<column alignment="left" valignment="top" leftline="true" rightline="true" width="0pt">
+<row topline="true" bottomline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+
+\emph on 
+Name
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+
+\emph on 
+Function
+\end_inset 
+</cell>
+</row>
+<row topline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+T
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Top of Stack
+\end_inset 
+</cell>
+</row>
+<row topline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+N
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Next of Stack
+\end_inset 
+</cell>
+</row>
+<row topline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+I
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Instruction Bundle
+\end_inset 
+</cell>
+</row>
+<row topline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+P
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Program Counter
+\end_inset 
+</cell>
+</row>
+<row topline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+A
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Address Register
+\end_inset 
+</cell>
+</row>
+<row topline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+addr
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Address Latch
+\end_inset 
+</cell>
+</row>
+<row topline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+state
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Processor State
+\end_inset 
+</cell>
+</row>
+<row topline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+sp
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Stack Pointer
+\end_inset 
+</cell>
+</row>
+<row topline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+rp
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Return Stack Pointer
+\end_inset 
+</cell>
+</row>
+<row topline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+c
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Carry Flag
+\end_inset 
+</cell>
+</row>
+<row topline="true" bottomline="true">
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+incby
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" leftline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Increment Address by byte/word
+\end_inset 
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset 
+
+
+\layout Scrap
+
+<<register declarations>>=
+\newline 
+reg    rd;
+\newline 
+reg [1:0] wr;
+\newline 
+reg [sdep-1:0] sp;
+\newline 
+reg [rdep-1:0] rp;
+\newline 
+
+\newline 
+reg `L T, N, I, P, A, addr;
+\newline 
+
+\newline 
+reg [2:0] state;
+\newline 
+reg c;
+\newline 
+reg incby;
+\newline 
+reg intack;
+\newline 
+@
+\layout Section
+
+Befehlssatz
+\layout Standard
+
+Es gibt insgesamt 32 verschiedene Befehle.
+ Da in ein 16-Bit-Wort mehrere Befehle 'reinpassen, nennen wir die einzelnen
+ Plätze für einen Befehlwortes einen ,,Slot
+\begin_inset Quotes grd
+\end_inset 
+
+, und das Befehlswort selbst 
+\begin_inset Quotes gld
+\end_inset 
+
+Bundle
+\begin_inset Quotes grd
+\end_inset 
+
+.
+ Die Aufteilung hier ist 1,5,5,5, d.h.
+ der erste Slot ist nur ein Bit groß (die höherwertigen Bits werden mit
+ 0 aufgefüllt), die anderen alle 5 Bit.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Standard
+
+Die Befehle in einem Befehls-Wort werden der Reihe nach ausgeführt.
+ Jeder Befehl braucht dabei einen Takt, Speicherzugriffe (auch das Befehlsholen)
+ brauchen nochmal einen Takt.
+ Welcher Befehl gerade an der Reihe ist, wird in der Variablen 
+\family typewriter 
+state
+\family default 
+ gespeichert.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Standard
+
+Der Befehlssatz teilt sich in vier Gruppen, Sprünge, ALU, Memory und Stack.
+ Tabelle 
+\begin_inset LatexCommand \ref{instructions}
+
+\end_inset 
+
+ zeigt eine Übersicht über die Befehle.
+\begin_inset Float table
+wide true
+collapsed false
+
+\layout Standard
+\align center 
+
+\begin_inset  Tabular
+<lyxtabular version="3" rows="7" columns="10">
+<features>
+<column alignment="center" valignment="top" leftline="true" rightline="true" width="0pt">
+<column alignment="center" valignment="top" rightline="true" width="0pt">
+<column alignment="center" valignment="top" rightline="true" width="0pt">
+<column alignment="center" valignment="top" rightline="true" width="0pt">
+<column alignment="center" valignment="top" rightline="true" width="0pt">
+<column alignment="center" valignment="top" rightline="true" width="0pt">
+<column alignment="center" valignment="top" rightline="true" width="0pt">
+<column alignment="center" valignment="top" rightline="true" width="0pt">
+<column alignment="center" valignment="top" rightline="true" width="0pt">
+<column alignment="left" valignment="top" rightline="true" width="0pt">
+<row topline="true" bottomline="true">
+<cell alignment="center" valignment="top" topline="true" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+0 
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+1 
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+2 
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+3 
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+4 
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+5 
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+6 
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+7 
+\end_inset 
+</cell>
+<cell alignment="left" valignment="top" topline="true" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+
+\emph on 
+Comment
+\end_inset 
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+0 
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+nop
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+call
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+jmp
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+ret
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+jz
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+jnz
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+jc
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+jnc
+\end_inset 
+</cell>
+<cell alignment="left" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+\end_inset 
+</cell>
+</row>
+<row bottomline="true">
+<cell alignment="center" valignment="top" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+exec
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+goto
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+ret
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+gz
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+gnz
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+gc
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+gnc
+\end_inset 
+</cell>
+<cell alignment="left" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+
+\emph on 
+for slot 3 
+\end_inset 
+</cell>
+</row>
+<row bottomline="true">
+<cell alignment="center" valignment="top" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+8 
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+xor
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+com
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+and
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+or
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
++
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
++c
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+
+\begin_inset Formula $*+$
+\end_inset 
+
+
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+/--
+\end_inset 
+</cell>
+<cell alignment="left" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+\end_inset 
+</cell>
+</row>
+<row>
+<cell alignment="center" valignment="top" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+10 
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+A!+
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+A@+
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+R@+
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+lit
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Ac!+
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Ac@+
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Rc@+
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+litc
+\end_inset 
+</cell>
+<cell alignment="left" valignment="top" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+\end_inset 
+</cell>
+</row>
+<row bottomline="true">
+<cell alignment="center" valignment="top" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+A!
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+A@
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+R@
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+lit
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Ac!
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Ac@
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+Rc@
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+litc
+\end_inset 
+</cell>
+<cell alignment="left" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+
+\emph on 
+for slot 1
+\emph default 
+ 
+\end_inset 
+</cell>
+</row>
+<row bottomline="true">
+<cell alignment="center" valignment="top" bottomline="true" leftline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+18 
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+nip
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+drop
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+over
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+dup
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+>r
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+>a
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+r>
+\end_inset 
+</cell>
+<cell alignment="center" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+a
+\end_inset 
+</cell>
+<cell alignment="left" valignment="top" bottomline="true" rightline="true" usebox="none">
+\begin_inset Text
+
+\layout Standard
+
+
+\lang american
+ 
+\end_inset 
+</cell>
+</row>
+</lyxtabular>
+
+\end_inset 
+
+
+\layout Caption
+
+Instruction Set
+\begin_inset LatexCommand \label{instructions}
+
+\end_inset 
+
+
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Standard
+
+Sprünge verwenden den Rest des Befehlswort als Zieladresse (außer 
+\family typewriter 
+ret
+\family default 
+ natürlich).
+ Dabei werden nur die untersten Bits des Instruction Pointers P ersetzt,
+ es wird nichts addiert.
+ Für Befehle im letzten Slot bleibt da natürlich nichts mehr übrig, die
+ nehmen dann T (TOS) als Ziel.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<instruction selection>>=
+\newline 
+// instruction and branch target selection   
+\newline 
+reg [4:0] inst;
+\newline 
+reg `L jmp;
+\newline 
+
+\newline 
+always @(state or I)
+\newline 
+   case(state[1:0])
+\newline 
+     2'b00: inst <= { 4'b0000, I[15] };
+\newline 
+     2'b01: inst <=   I[14:10];
+\newline 
+     2'b10: inst <=   I[9:5];
+\newline 
+     2'b11: inst <=   I[4:0];
+\newline 
+   endcase // casez(state)
+\newline 
+
+\newline 
+always @(state or I or P or T)
+\newline 
+   case(state[1:0])
+\newline 
+     2'b00: jmp <= { I[14:0], 1'b0 };
+\newline 
+     2'b01: jmp <= { P[15:11], I[9:0], 1'b0 };
+\newline 
+     2'b10: jmp <= { P[15:6], I[4:0], 1'b0 };
+\newline 
+     2'b11: jmp <= { T[15:1], 1'b0 };
+\newline 
+   endcase // casez(state)
+\newline 
+@
+\layout Standard
+
+Die eigentlichen Befehle werden dann abhängig von 
+\family typewriter 
+inst
+\family default 
+ ausgeführt:
+\layout Scrap
+
+<<instructions>>=
+\newline 
+casez(inst)
+\newline 
+   <<control flow>>
+\newline 
+   <<ALU operations>>
+\newline 
+   <<load/store>>
+\newline 
+   <<stack operations>>
+\newline 
+endcase // case(inst)
+\newline 
+@
+\layout Subsection
+
+Sprünge
+\layout Standard
+
+In Einzelnen werden die Sprünge wie folgt ausgeführt: Die Sprungadresse
+ wird nicht im P-Register gespeichert, sondern im Adreßlatch 
+\family typewriter 
+addr
+\family default 
+, das für die Adressierung des Speichers genutzt wird.
+ Das Register P wird dann nach dem Befehlsholen mit dem inkrementierten
+ Wert von 
+\family typewriter 
+addr
+\family default 
+ gesetzt.
+ Neben 
+\family typewriter 
+call
+\family default 
+, 
+\family typewriter 
+jmp
+\family default 
+ und 
+\family typewriter 
+ret
+\family default 
+ gibt's auch bedingte Sprünge, die auf 0 oder Carry testen.
+ Das unterste Bit auf dem Returnstack wird genutzt, um das Carryflag zu
+ sichern.
+ Unterprogramme lassen also das Carryflag in Ruhe.
+ Bei den bedingten Sprüngen muß man als Forther berücksichtigen, daß die
+ den getesteten Wert nicht vom Stack nehmen.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Standard
+
+Der Einfachheit beschreibe ich den Effekt eines jeden Befehls noch in einer
+ Pseudo-Sprache:
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+nop ( --- )
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+call ( --- r:P ) 
+\begin_inset Formula $\mathrm{P}\leftarrow jmp$
+\end_inset 
+
+; 
+\begin_inset Formula $\mathrm{c}\leftarrow0$
+\end_inset 
+
+ 
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+jmp ( --- ) 
+\begin_inset Formula $\mathrm{P}\leftarrow jmp$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+ret ( r:a --- ) 
+\begin_inset Formula $\mathrm{P}\leftarrow a\wedge\$\mathrm{FFFE}$
+\end_inset 
+
+; 
+\begin_inset Formula $\mathrm{c}\leftarrow a\wedge1$
+\end_inset 
+
+ 
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+jz ( n --- n ) 
+\begin_inset Formula $\mathbf{if}(n=0)\,\mathrm{P}\leftarrow jmp$
+\end_inset 
+
+ 
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+jnz ( n --- n ) 
+\begin_inset Formula $\mathbf{if}(n\ne0)\,\mathrm{P}\leftarrow jmp$
+\end_inset 
+
+ 
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+jc ( --- ) 
+\begin_inset Formula $\mathbf{if}(c)\,\mathrm{P}\leftarrow jmp$
+\end_inset 
+
+ 
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+jnc ( --- ) 
+\begin_inset Formula $\mathbf{if}(c=0)\,\mathrm{P}\leftarrow jmp$
+\end_inset 
+
+ 
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<control flow>>=
+\newline 
+5'b00001: begin
+\newline 
+   rp <= rpdec;
+\newline 
+   addr <= jmp;
+\newline 
+   c <= 1'b0;
+\newline 
+   if(state == 3'b011) `DROP;
+\newline 
+end // case: 5'b00001
+\newline 
+5'b00010: begin
+\newline 
+   addr <= jmp;
+\newline 
+   if(state == 3'b011) `DROP;
+\newline 
+end
+\newline 
+5'b00011: begin
+\newline 
+   { c, addr } <= { R[0], R[l-1:1], 1'b0 };
+\newline 
+   rp <= rpinc;
+\newline 
+end // case: 5'b01111
+\newline 
+5'b001??: begin
+\newline 
+   if((inst[1] ? c : zero) ^ inst[0]) 
+\newline 
+      addr <= jmp;
+\newline 
+   if(state == 3'b011) `DROP;
+\newline 
+end
+\newline 
+@
+\layout Subsection
+
+ALU-Operationen
+\layout Standard
+
+Die ALU-Befehle nutzen die ALU, die aus T und N ein Ergebnis 
+\family typewriter 
+res
+\family default 
+ und das Carry-Bit ausrechnet.
+ Ausnahme ist der Befehl 
+\family typewriter 
+com
+\family default 
+, der einfach nur T invertiert --- dazu braucht man keine ALU.
+ 
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Standard
+
+Die beiden Befehle 
+\family typewriter 
+*+
+\family default 
+ (Multiplikationsschritt) und 
+\family typewriter 
+/-
+\family default 
+ (Divisionsschritt) schieben das Ergebnis noch über das A-Register und das
+ Carry-Bit.
+ 
+\family typewriter 
+*+
+\family default 
+ addiert N zum T, wenn das Carry gesetzt ist, und schiebt das Ergebnis eins
+ nach rechts.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Standard
+
+
+\family typewriter 
+/-
+\family default 
+ addiert auch N zum T, prüft aber, ob es dabei eine Überlauf gegeben hat,
+ oder ob das alte Carry gesetzt war.
+ Dabei schiebt es das Ergebnis eins nach links.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Standard
+
+Normale ALU-Befehle nehmen einfach das Resultat der ALU in T und c, und
+ laden N nach.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+xor ( a b --- r ) 
+\begin_inset Formula $r\leftarrow a\oplus b$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+com ( a --- r ) 
+\begin_inset Formula $r\leftarrow a\oplus\$\mathrm{FFFF}$
+\end_inset 
+
+, 
+\begin_inset Formula $\mathrm{c}\leftarrow1$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+and ( a b --- r ) 
+\begin_inset Formula $r\leftarrow a\wedge b$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+or ( a b --- r ) 
+\begin_inset Formula $r\leftarrow a\vee b$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
++ ( a b --- r ) 
+\begin_inset Formula $\mathrm{c},r\leftarrow a+b$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
++c ( a b --- r) 
+\begin_inset Formula $\mathrm{c},r\leftarrow a+b+\mathrm{c}$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+
+\begin_inset Formula $*$
+\end_inset 
+
++ ( a b --- a r ) 
+\begin_inset Formula $\mathbf{if}(\mathrm{c})\, c_{n},r\leftarrow a+b\,\mathbf{else}\, c_{n},r\leftarrow0,b$
+\end_inset 
+
+; 
+\begin_inset Formula $r,\mathrm{A},\mathrm{c}\leftarrow c_{n},r,\mathrm{A}$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+/-- ( a b --- a r ) 
+\begin_inset Formula $c_{n},r_{n}\leftarrow a+b+1;$
+\end_inset 
+
+ 
+\begin_inset Formula $\mathbf{if}(\mathrm{c}\vee c_{n})\, r\leftarrow r_{n}$
+\end_inset 
+
+; 
+\begin_inset Formula $\mathrm{c},r,\mathrm{A}\leftarrow r,\mathrm{A},\mathrm{c}\vee c_{n}$
+\end_inset 
+
+ 
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<ALU operations>>=
+\newline 
+5'b01001: { c, T } <= { 1'b1, ~T };
+\newline 
+5'b01110: { T, A, c } <= 
+\newline 
+   { c ? { carry, res } : { 1'b0, T }, A };
+\newline 
+5'b01111: { c, T, A } <= 
+\newline 
+   { (c | carry) ? res : T, A, (c | carry) };
+\newline 
+5'b01???: begin
+\newline 
+   c <= carry;
+\newline 
+   { sp, T, N } <= { spinc, res, toN };
+\newline 
+end // case: 5'b01???
+\newline 
+@
+\layout Subsection
+
+Speicher-Befehle
+\layout Standard
+
+
+\noun on 
+Chuck Moore
+\noun default 
+ benutzt nicht mehr den TOS als Adresse, sondern hat ein A-Register eingeführt.
+ Wenn man Speicherbereiche kopieren will, braucht man noch ein zweites Adreßregi
+ster; dafür nimmt er den Top-of-Returnstack R.
+ Da man den P nach jedem Zugriff erhöhen muß (auf den nächsten Befehl),
+ ist in der Adressierungslogik schon ein Autoinkrement enthalten.
+ Das wird dann auch für andere Zugriffe verwendet.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Standard
+
+Speicher-Befehle, die im ersten Slot stehen, und nicht über P indizieren,
+ inkrementieren den Pointer nicht; damit sind Read-Modify-Write-Befehle
+ wie +! einfach zu realisieren.
+ Speichern kann man nur über A, die beiden anderen Pointer sind nur zum
+ Lesen gedacht.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+A!+ ( n --- ) 
+\begin_inset Formula $mem[\mathrm{A}]\leftarrow n$
+\end_inset 
+
+; 
+\begin_inset Formula $\mathrm{A}\leftarrow\mathrm{A}+2$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+A@+ ( --- n ) 
+\begin_inset Formula $n\leftarrow mem[\mathrm{A}]$
+\end_inset 
+
+; 
+\begin_inset Formula $\mathrm{A}\leftarrow\mathrm{A}+2$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+R@+ ( --- n ) 
+\begin_inset Formula $n\leftarrow mem[\mathrm{R}]$
+\end_inset 
+
+; 
+\begin_inset Formula $\mathrm{R}\leftarrow\mathrm{R}+2$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+lit ( --- n ) 
+\begin_inset Formula $n\leftarrow mem[\mathrm{P}]$
+\end_inset 
+
+; 
+\begin_inset Formula $\mathrm{P}\leftarrow\mathrm{P}+2$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+Ac!+ ( c --- ) 
+\begin_inset Formula $mem.b[\mathrm{A}]\leftarrow c$
+\end_inset 
+
+; 
+\begin_inset Formula $\mathrm{A}\leftarrow\mathrm{A}+1$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+Ac@+ ( --- c ) 
+\begin_inset Formula $c\leftarrow mem.b[\mathrm{A}]$
+\end_inset 
+
+; 
+\begin_inset Formula $\mathrm{A}\leftarrow\mathrm{A}+1$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+Rc@+ ( --- c ) 
+\begin_inset Formula $c\leftarrow mem.b[\mathrm{R}]$
+\end_inset 
+
+; 
+\begin_inset Formula $\mathrm{R}\leftarrow\mathrm{R}+1$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+litc ( --- c ) 
+\begin_inset Formula $c\leftarrow mem.b[\mathrm{P}]$
+\end_inset 
+
+; 
+\begin_inset Formula $\mathrm{P}\leftarrow\mathrm{P}+1$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<address handling>>=
+\newline 
+wire `L toaddr, incaddr, toR, R;
+\newline 
+wire tos2r;
+\newline 
+
+\newline 
+assign toaddr = inst[1] ? (inst[0] ? P : R) : A;
+\newline 
+assign incaddr = 
+\newline 
+    { addr[l-1:1] + (incby | addr[0]), 
+\newline 
+                   ~(incby | addr[0]) };
+\newline 
+assign tos2r = inst == 5'b11100;
+\newline 
+assign toR = state[2] ? incaddr : 
+\newline 
+             (tos2r ? T : { P[15:1], c });
+\newline 
+@
+\layout Standard
+
+Der Zugriff kann nicht nur wortweise, sondern auch byteweise erfolgen.
+ Dazu gibt es zwei Write-Leitungen.
+ Für byteweises Speichern wird das untere Byte in T ins obere kopiert.
+\layout Scrap
+
+<<load/store>>=
+\newline 
+5'b10000: begin
+\newline 
+   addr <= toaddr;
+\newline 
+   wr <= 2'b11;
+\newline 
+end
+\newline 
+5'b10100: begin
+\newline 
+   addr <= toaddr;
+\newline 
+   wr <= { ~toaddr[0], toaddr[0] };
+\newline 
+   T <= { T[7:0], T[7:0] };
+\newline 
+end
+\newline 
+5'b10???: begin 
+\newline 
+   addr <= toaddr;
+\newline 
+   rd <= 1'b1;
+\newline 
+end
+\newline 
+@
+\layout Standard
+
+Speicherzugriffe benötigen einen Extra-Takt.
+ Dabei wird das Ergebnis des Speicherzugriffs verarbeitet.
+\layout Scrap
+
+<<load-store>>=
+\newline 
+if(show) begin
+\newline 
+   <<debug>>
+\newline 
+end
+\newline 
+state <= nextstate;
+\newline 
+<<pointer increment>>
+\newline 
+rd <= 1'b0; 
+\newline 
+wr <= 2'b0; 
+\newline 
+if(|state[1:0]) begin 
+\newline 
+   <<store afterwork>>
+\newline 
+end else begin 
+\newline 
+   <<ifetch>>
+\newline 
+end 
+\newline 
+<<next>>
+\newline 
+@
+\layout Standard
+
+Eine kleine Besonderheit gibt's beim angesetzten Instruction-Fetch (dem
+ NEXT der Maschine) noch: Wenn der aktuelle Speicherbefehl ein Literal ist,
+ müssen wir 
+\family typewriter 
+inc\SpecialChar \-
+addr
+\family default 
+ statt P nehmen.
+\layout Scrap
+
+<<next>>=
+\newline 
+if(nextstate == 3'b100) begin 
+\newline 
+    { addr, rd } <= { &inst[1:0] ? 
+\newline 
+                      incaddr : P, 1'b1 }; 
+\newline 
+end // if (nextstate == 3'b100)
+\newline 
+@
+\layout Scrap
+
+<<debug>>=
+\newline 
+$write("%b[%b] T=%b%x:%x[%x], ",
+\newline 
+       inst, state, c, T, N, sp);
+\newline 
+$write("P=%x, I=%x, A=%x, R=%x[%x], res=%b%x
+\backslash 
+n",
+\newline 
+       P, I, A, R, rp, carry, res);
+\newline 
+@
+\layout Standard
+
+Ist der Zugriff beendet, muß das Resultat abgearbeitet werden --- bei Load-Zugri
+ffen der Wert auf den Stack oder ins Instruction-Register geladen, bei Store-Zug
+riffen der TOS gedropt werden.
+ 
+\layout Scrap
+
+<<store afterwork>>=
+\newline 
+if(rd) 
+\newline 
+   if(incby) 
+\newline 
+      { sp, T, N } <= { spdec, data, T }; 
+\newline 
+   else 
+\newline 
+      { sp, T, N } <= { spdec, 8'h00,
+\newline 
+        addr[0] ? data[7:0] : data[l-1:8], T }; 
+\newline 
+if(|wr) 
+\newline 
+   `DROP; 
+\newline 
+incby <= 1'b1; 
+\newline 
+@
+\layout Standard
+
+Außerdem muß bei Bedarf die inkrementierte Adresse zurück in den entsprechenden
+ Pointer geladen werden.
+ 
+\layout Scrap
+
+<<pointer increment>>=
+\newline 
+casez({ state[1:0], inst[1:0] }) 
+\newline 
+   4'b00??: P <= !intreq ? incaddr : addr; 
+\newline 
+   4'b1?0?: A <= incaddr; 
+\newline 
+// 4'b1?10: R <= incaddr; 
+\newline 
+   4'b??11: P <= incaddr; 
+\newline 
+endcase // casez({ state[1:0], inst[1:0] }) 
+\newline 
+@
+\layout Standard
+
+Damit der erste Befehl (nur 
+\family typewriter 
+nop
+\family default 
+ oder 
+\family typewriter 
+call
+\family default 
+) keine unnötige Zeit verbraucht, wird ein 
+\family typewriter 
+nop
+\family default 
+ hier einfach übersprungen.
+ Das ist der zweite Teil des NEXTs.
+\layout Scrap
+
+<<ifetch>>=
+\newline 
+intack <= intreq;
+\newline 
+if(intreq)
+\newline 
+  I <= { 8'h81, intvec }; // call $200+intvec*2
+\newline 
+else
+\newline 
+  I <= data; 
+\newline 
+if(!intreq & !data[15]) state[1:0] <= 2'b01;
+\newline 
+@
+\layout Standard
+
+Hier werden auch die Interrupts abgearbeitet.
+ Interrupts werden beim Instruction-Fetch akzeptiert.
+ Statt P zu erhöhen, wird hier ein Call auf den Interruptvektor (Adressen
+ ab $200) ins Befehlsregister geladen.
+ Die Interruptroutine muß lediglich bei Bedarf A sichern, und den Stack
+ so hinterlassen wie sie ihn vorgefunden hat.
+ Da drei Befehle hintereinander ohne Unterbrenchung ausgeführt werden können,
+ sehe ich keine Interruptsperrung vor, oder eine über die externe Interrupt-Unit
+ verwaltete.
+ Die letzten drei Befehle einer Interrupt-Routine währen dann 
+\family typewriter 
+a! >a ret
+\family default 
+.
+\layout Subsection
+
+Stack-Befehle
+\layout Standard
+
+Die Stack-Befehle ändern den Stackpointer und schieben entsprechend die
+ Werte in und aus den Latches.
+ Bei den 8 benutzten Stack-Effekten fällt auf, daß 
+\family typewriter 
+swap
+\family default 
+ fehlt.
+ Stattdessen gibt es 
+\family typewriter 
+nip
+\family default 
+.
+ Der Grund ist eine damit mögliche Implementierungs-Option: Man kann das
+ separate Latch N einfach weglassen, und diesen Wert direkt aus dem Stack-RAM
+ holen.
+ Das dauert zwar länger, spart aber Platz.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Standard
+
+Außerdem behauptet Chuck Moore, daß man 
+\family typewriter 
+swap
+\family default 
+ gar nicht so nötig braucht --- wenn es nicht verfügbar ist, behilft man
+ sich mit den anderen Stack-Operationen, und wenn es gar nicht anders geht,
+ gibt's ja immer noch 
+\family typewriter 
+>a >r a r>
+\family default 
+.
+\layout Description
+
+nip ( a b --- b )
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+drop ( a --- )
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+over ( a b --- a b a )
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+dup ( a --- a a )
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+>r ( a --- r:a )
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+>a ( a --- ) 
+\begin_inset Formula $\mathrm{A}\leftarrow a$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+r> ( r:a --- a )
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Description
+
+a ( --- a ) 
+\begin_inset Formula $a\leftarrow\mathrm{A}$
+\end_inset 
+
+
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<stack operations>>=
+\newline 
+5'b11000: { sp, N } <= { spinc, toN };
+\newline 
+5'b11001: `DROP;
+\newline 
+5'b11010: { sp, T, N } <= { spdec, N, T };
+\newline 
+5'b11011: { sp, N } <= { spdec, T };
+\newline 
+5'b11100: begin
+\newline 
+   rp <= rpdec; `DROP;
+\newline 
+end // case: 5'b11100
+\newline 
+5'b11101: begin
+\newline 
+   A <= T; `DROP;
+\newline 
+end // case: 5'b11101
+\newline 
+5'b11110: begin
+\newline 
+   { sp, T, N } <= { spdec, R, T };
+\newline 
+   rp <= rpinc;
+\newline 
+end // case: 5'b11110
+\newline 
+5'b11111:  { sp, T, N } <= { spdec, A, T };
+\newline 
+@
+\layout Standard
+
+Wer auf 
+\family typewriter 
+swap
+\family default 
+ nicht verzichten möchte, kann einfach die Implementierung des 
+\family typewriter 
+nip
+\family default 
+s in der ersten Zeile ersetzen:
+\layout Scrap
+
+<<swap>>=
+\newline 
+5'b11000: { T, N } <= { N, T };
+\newline 
+@
+\layout Section
+
+Beispiele
+\layout Standard
+
+Ein paar Beispiele sollen zeigen, wie man den Prozessor programmiert.
+ Die Multiplikation funktioniert wie gesagt über das A-Register.
+ Es ist ein Extra-Schritt nötig, weil ja jedes Bit zunächst einmal ins Carry
+ geschoben werden muß.
+ Da 
+\family typewriter 
+call
+\family default 
+ das Carry-Flag löscht, brauchen wir uns darum nicht zu kümmern.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+ 
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<mul>>=
+\newline 
+: mul ( u1 u2 -- ud ) 
+\newline 
+  >A 0 # 
+\newline 
+  *+ *+ *+  *+ *+ *+  *+ *+ *+
+\newline 
+  *+ *+ *+  *+ *+ *+  *+ *+ 
+\newline 
+  >r drop a r> ; 
+\newline 
+@
+\layout Standard
+
+Auch bei der Division muß ein Extra-Schritt eingelegt werden.
+ Eigentlich bräuchten wir hier echt ein 
+\family typewriter 
+swap
+\family default 
+, da wir aber keines haben, nehmen wir zunächst 
+\family typewriter 
+over
+\family default 
+ und nehmen in Kauf, daß wir ein Stackelement mehr brauchen als im anderen
+ Fall.
+ Anders als bei 
+\family typewriter 
+mul
+\family default 
+ müssen wir hier nach dem 
+\family typewriter 
+com
+\family default 
+ das Carry wieder löschen.
+ Und am Schluß müssen wir noch den Rest durch zwei teilen, und den Carry
+ nachschieben.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+ 
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<div>>=
+\newline 
+: div ( ud udiv -- uqout umod ) 
+\newline 
+  com >r >r >a r> r> over 0 # +
+\newline 
+  /- /- /-  /- /- /-  /- /- /- 
+\newline 
+  /- /- /-  /- /- /-  /- /-
+\newline 
+  nip nip a >r -cIF *+ r> ; 
+\newline 
+  THEN 0 # + *+ $8000 # + r> ;
+\newline 
+@
+\layout Standard
+
+Das nächste Beispiel ist etwas komplizierter, weil ich hier eine serielle
+ Schnittstelle emuliere.
+ Bei 10MHz muß jedes Bit 87 Takte brauchen, damit die Schnittstelle 115200
+ Baud schnell ist.
+ Erst hinter dem zweiten Stop-Bit haben wir Ruhe, die Gegenseite wird sich
+ schon wieder synchronisieren, wenn das nächste Bit kommt.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<serial line>>=
+\newline 
+: send-rest ( c -- c' ) *+ 
+\newline 
+: wait-bit
+\newline 
+  1 # $FFF9 # BEGIN  over +  cUNTIL  drop drop ;
+\newline 
+: send-bit ( c -- c' ) 
+\newline 
+  nop 
+\backslash 
+ delay at start
+\newline 
+: send-bit-fast ( c -- c' ) 
+\newline 
+  $FFFE # >a dup 1 # and 
+\newline 
+  IF    drop $0001 # a@ or  a!+ send-rest ; 
+\newline 
+  THEN  drop $FFFE # a@ and a!+ send-rest ;
+\newline 
+: emit ( c -- ) 
+\backslash 
+ 8N1, 115200 baud 
+\newline 
+  >r 06 # send-bit r> 
+\newline 
+  send-bit-fast send-bit send-bit send-bit 
+\newline 
+  send-bit send-bit send-bit send-bit 
+\newline 
+  drop send-bit-fast send-bit drop ;
+\newline 
+@
+\layout Standard
+
+Der 
+\family typewriter 
+;
+\family default 
+ hat hier wie bei ColorForth die Funktion des EXITs, so wie der 
+\family typewriter 
+:
+\family default 
+ nur ein Label einleitet.
+ Steht vor dem 
+\family typewriter 
+;
+\family default 
+ ein Call, so wird der in einen Sprung umgewandelt.
+ Das spart Returnstack-Einträge, Zeit und Platz im Code.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Section
+
+Der Rest der Implementierung
+\layout Standard
+
+Zunächst einmal den Rumpf der Datei.
+\layout Scrap
+
+<<b16.v>>=
+\newline 
+/*
+\newline 
+ * b16 core: 16 bits, 
+\newline 
+ * inspired by c18 core from Chuck Moore
+\newline 
+ *
+\newline 
+<<inst-comment>>
+\newline 
+ */
+\newline 
+ 
+\newline 
+`define L [l-1:0]
+\newline 
+`define DROP { sp, T, N } <= { spinc, N, toN } 
+\newline 
+`timescale 1ns / 1ns
+\newline 
+
+\newline 
+<<ALU>>
+\newline 
+<<Stack>>
+\newline 
+<<cpu>>
+\newline 
+@
+\layout Scrap
+
+<<inst-comment>>= 
+\newline 
+ * Instruction set:
+\newline 
+ * 1, 5, 5, 5 bits
+\newline 
+ *     0    1    2    3    4    5    6    7
+\newline 
+ *  0: nop  call jmp  ret  jz   jnz  jc   jnc
+\newline 
+ *  /3      exec goto ret  gz   gnz  gc   gnc
+\newline 
+ *  8: xor  com  and  or   +    +c   *+   /-
+\newline 
+ * 10: A!+  A@+  R@+  lit  Ac!+ Ac@+ Rc@+ litc
+\newline 
+ *  /1 A!   A@   R@   lit  Ac!  Ac@  Rc@  litc
+\newline 
+ * 18: nip  drop over dup  >r   >a   r>   a
+\newline 
+@
+\newline 
+
+\layout Subsection
+
+Toplevel
+\layout Standard
+
+Die CPU selbst besteht aus verschiedenen Teilen, die aber alle im selben
+ Verilog-Modul implementiert werden.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<cpu>>=
+\newline 
+module cpu(clk, reset, addr, rd, wr, data, T, 
+\newline 
+           intreq, intack, intvec);
+\newline 
+   <<port declarations>>
+\newline 
+   <<register declarations>>
+\newline 
+   <<instruction selection>>
+\newline 
+   <<ALU instantiation>>
+\newline 
+   <<address handling>>
+\newline 
+   <<stack pushs>>
+\newline 
+   <<stack instantiation>>
+\newline 
+   <<state changes>>
+\newline 
+
+\newline 
+   always @(posedge clk or negedge reset)
+\newline 
+      <<register updates>>
+\newline 
+
+\newline 
+endmodule // cpu
+\newline 
+@
+\layout Standard
+
+Zunächst braucht Verilog erst mal Port Declarations, damit es weiß, was
+ Input und Output ist.
+ Die Parameter dienen dazu, auch andere Wortbreiten oder Stacktiefen einfach
+ einzustellen.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<port declarations>>=
+\newline 
+parameter show=0, l=16, sdep=3, rdep=3;
+\newline 
+input clk, reset;
+\newline 
+output `L addr;
+\newline 
+output rd;
+\newline 
+output [1:0] wr;
+\newline 
+input  `L data;
+\newline 
+output `L T;
+\newline 
+input  intreq;
+\newline 
+output intack;
+\newline 
+input [7:0] intvec; // interrupt jump vector
+\newline 
+@
+\layout Standard
+
+Die ALU wird mit der entsprechenden Breite instanziiert, und die nötigen
+ Leitungen werden deklariert
+\layout Scrap
+
+<<ALU instantiation>>=
+\newline 
+wire `L res, toN;
+\newline 
+wire carry, zero;
+\newline 
+
+\newline 
+alu #(l) alu16(res, carry, zero, 
+\newline 
+               T, N, c, inst[2:0]);
+\newline 
+@
+\layout Standard
+
+Da die Stacks nebenher arbeiten, müssen wir noch ausrechnen, wann ein Wert
+ auf den Stack gepusht wird (also 
+\series bold 
+nur
+\series default 
+ wenn etwas gespeichert wird).
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<stack pushs>>=
+\newline 
+reg dpush, rpush;
+\newline 
+
+\newline 
+always @(clk or state or inst or rd)
+\newline 
+  begin
+\newline 
+     dpush <= 1'b0;
+\newline 
+     rpush <= 1'b0;
+\newline 
+     if(state[2]) begin
+\newline 
+        dpush <= |state[1:0] & rd;
+\newline 
+        rpush <= state[1] & (inst[1:0]==2'b10);
+\newline 
+     end else
+\newline 
+        casez(inst)
+\newline 
+          5'b00001: rpush <= 1'b1;
+\newline 
+          5'b11100: rpush <= 1'b1;
+\newline 
+          5'b11?1?: dpush <= 1'b1;
+\newline 
+        endcase // case(inst)
+\newline 
+  end
+\newline 
+@
+\layout Standard
+
+Zu den Stacks gehören nicht nur die beiden Stack-Module, sondern auch noch
+ inkrementierter und dekrementierter Stackpointer.
+ Beim Returnstack kommt erschwerend dazu, daß der Top of Returnstack manchmal
+ geschrieben wird, ohne daß sich die Returnstacktiefe ändert.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<stack instantiation>>=
+\newline 
+wire [sdep-1:0] spdec, spinc;
+\newline 
+wire [rdep-1:0] rpdec, rpinc;
+\newline 
+
+\newline 
+stack #(sdep,l) dstack(clk, sp, spdec, 
+\newline 
+                       dpush, N, toN);
+\newline 
+stack #(rdep,l) rstack(clk, rp, rpdec, 
+\newline 
+                       rpush, toR, R);
+\newline 
+
+\newline 
+assign spdec = sp-{{(sdep-1){1'b0}}, 1'b1};
+\newline 
+assign spinc = sp+{{(sdep-1){1'b0}}, 1'b1};
+\newline 
+assign rpdec = rp+{(rdep){(~state[2] | tos2r)}};
+\newline 
+assign rpinc = rp+{{(rdep-1){1'b0}}, 1'b1};
+\newline 
+@
+\layout Standard
+
+Der eigentliche Kern ist das voll synchrone Update der Register.
+ Die brauchen einen Reset-Wert, und für die verschiedenen Zustände müssen
+ die entsprechenden Zuweisungen codiert werden.
+ Das meiste haben wir weiter oben schon gesehen, nur das Befehlsholen und
+ die Zuweisung des nächsten States und des Wertes von 
+\family typewriter 
+incby
+\family default 
+ bleibt noch zu erledigen.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<register updates>>=
+\newline 
+if(!reset) begin
+\newline 
+   <<resets>>
+\newline 
+end else if(state[2]) begin
+\newline 
+   <<load-store>>
+\newline 
+end else begin // if (state[2])
+\newline 
+   if(show) begin
+\newline 
+      <<debug>>
+\newline 
+   end
+\newline 
+   if(nextstate == 3'b100)
+\newline 
+      { addr, rd } <= { P, 1'b1 };
+\newline 
+   state <= nextstate;
+\newline 
+   incby <= (inst[4:2] != 3'b101);
+\newline 
+   <<instructions>>
+\newline 
+end // else: !if(reset)
+\newline 
+@
+\layout Standard
+
+Als Reset-Wert stellen wir die CPU so ein, daß sie sich gerade den nächsten
+ Befehl holen will, und zwar von der Adresse 0.
+ Die Stacks sind alle leer, die Register enthalten alle 0.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<resets>>=
+\newline 
+state <= 3'b011;
+\newline 
+incby <= 1'b0;
+\newline 
+P <= 16'h0000;
+\newline 
+addr <= 16'h0000;
+\newline 
+A <= 16'h0000;
+\newline 
+T <= 16'h0000;
+\newline 
+N <= 16'h0000;
+\newline 
+I <= 16'h0000;
+\newline 
+c <= 1'b0;
+\newline 
+rd <= 1'b0;
+\newline 
+wr <= 2'b00;
+\newline 
+sp <= 0;
+\newline 
+rp <= 0;
+\newline 
+intack <= 0;
+\newline 
+@
+\layout Standard
+
+Der Übergang zum nächsten State (das NEXT innerhalb eines Bundles) wird
+ getrennt erledigt.
+ Das ist nötig, weil die Zuweisungen der anderen Variablen zum Teil nicht
+ nur abhängig vom aktuellen State sind, sondern auch vom nächsten (z.B.
+ wann das nächste Befehlswort geholt werden soll).
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<state changes>>=
+\newline 
+reg [2:0] nextstate;
+\newline 
+
+\newline 
+always @(inst or state)
+\newline 
+   if(state[2]) begin 
+\newline 
+      <<rw-nextstate>>
+\newline 
+   end else begin 
+\newline 
+      casez(inst) 
+\newline 
+         <<inst-nextstate>>
+\newline 
+      endcase // casez(inst[0:2]) 
+\newline 
+   end // else: !if(state[2]) end
+\newline 
+@
+\layout Scrap
+
+<<rw-nextstate>>= 
+\newline 
+nextstate <= state[1:0] + { 2'b0, |state[1:0] }; 
+\newline 
+@
+\layout Scrap
+
+<<inst-nextstate>>=
+\newline 
+5'b00000: nextstate <= state[1:0] + 3'b001; 
+\newline 
+5'b00???: nextstate <= 3'b100; 
+\newline 
+5'b10???: nextstate <= { 1'b1, state[1:0] }; 
+\newline 
+5'b?????: nextstate <= state[1:0] + 3'b001; 
+\newline 
+@
+\layout Subsection
+
+ALU
+\layout Standard
+
+Die ALU berechnet einfach die Summe mit den verschiedenen möglichen Carry-ins,
+ die logischen Operationen, und ein Zero-Flag.
+ Zwar können hier gemeinsame Resourcen verwendet werden (die XORs des Volladdier
+ers können auch die XOR-Operation machen, und die Carry-Propagation könnte
+ OR und AND berechnen), dieses Quetschen von Logik überlassen wir aber dem
+ Synthesetool.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<ALU>>=
+\newline 
+module alu(res, carry, zero, T, N, c, inst);
+\newline 
+   <<ALU ports>>
+\newline 
+   
+\newline 
+   wire        `L sum, logic;
+\newline 
+   wire        cout;
+\newline 
+   
+\newline 
+   assign { cout, sum } = 
+\newline 
+          T + N + ((c | andor) & selr);
+\newline 
+   assign logic = andor ? 
+\newline 
+                  (selr ? (T | N) : (T & N)) : 
+\newline 
+                  T ^ N;
+\newline 
+   assign { carry, res } =
+\newline 
+          prop ? { cout, sum } : { c, logic };
+\newline 
+   assign zero = ~|T;
+\newline 
+   
+\newline 
+endmodule // alu
+\newline 
+@
+\layout Standard
+
+Die ALU hat die Ports T und N, carry in und die untersten 3 Bits des Befehls
+ als Input, ein Ergebnis, carry out und der Test auf 0 als Output.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<ALU ports>>=
+\newline 
+parameter l=16;
+\newline 
+input `L T, N;
+\newline 
+input c;
+\newline 
+input [2:0] inst;
+\newline 
+output `L res;
+\newline 
+output carry, zero;
+\newline 
+
+\newline 
+wire prop, andor, selr;
+\newline 
+
+\newline 
+assign #1 { prop, andor, selr } = inst;
+\newline 
+@
+\layout Subsection
+
+Stacks
+\layout Standard
+
+Die Stacks werden im FPGA als Block-RAM implementiert.
+ Dazu sollten sie am besten nur einen Port haben, denn solche Block-RAMs
+ gibt's auch in kleinen FPGAs.
+ Im ASIC wird diese Art von Stack mit Latches implementiert.
+ Dabei könnte man auch Read- und Write-Port trennen (oder für FPGAs, die
+ dual-ported RAM können), und sich den Multiplexer für 
+\family typewriter 
+spset
+\family default 
+ sparen.
+\begin_inset ERT
+status Collapsed
+
+\layout Standard
+
+\backslash 
+filbreak
+\end_inset 
+
+
+\layout Scrap
+
+<<Stack>>=
+\newline 
+module stack(clk, sp, spdec, push, in, out);
+\newline 
+   parameter dep=3, l=16;
+\newline 
+   input clk, push;
+\newline 
+   input [dep-1:0] sp, spdec; 
+\newline 
+   input `L in;
+\newline 
+   output `L out; 
+\newline 
+   reg `L stackmem[0:(1@<<dep)-1];
+\newline 
+   wire [dep-1:0]  spset;
+\newline 
+
+\newline 
+`ifdef BEH_STACK
+\newline 
+   always @(clk or push or spset or in)
+\newline 
+     if(push & ~clk) stackmem[spset] <= #1 in;
+\newline 
+ 
+\newline 
+   assign spset = push ? spdec : sp;
+\newline 
+   assign #1 out = stackmem[spset];
+\newline 
+`else
+\newline 
+   stackram stram(in, push, spdec, sp, ~clk, out);
+\newline 
+`endif
+\newline 
+endmodule // stack
+\newline 
+@
+\layout Subsection
+
+Weitere mögliche Optimierungen
+\layout Standard
+
+Eigentlich könnte man Speicherzugriffe und Berechnungen auf den Stacks überlappe
+nd ausführen.
+ Durch die separaten Pointer-Register ist das möglich.
+ Die Verständlichkeit des Prozessors würde darunter aber sicher leiden,
+ und der kritische Pfad würde wohl auch länger.
+ Angesichts einer garantierten Beschleunigung um 25% (der Zyklus zum Befehlshole
+n fällt weg) und einer maximalen Beschleunigung um 100% (bei speicher-intensiven
+ Anwendungen) könnte es aber wert sein --- wenn der Platz da ist.
+\layout Standard
+
+Falls Platz knapp ist, kann man fast alle Register als Latches auslegen.
+ Nur T muß ein echtes Flip-Flop bleiben.
+ Für FPGAs ist das keine Option, Flip-Flips sind dort allemal günstiger.
+\layout Subsection
+
+Skalierbarkeit
+\layout Standard
+
+Zwei mögliche Ansatzpunkte gibt es, den b16 schnell an eigene Wünche anzupassen:
+ Die Wortbreite und die Stacktiefe.
+ Die Stacktiefe ist dabei der einfachste Punkt.
+ Die gewählte Tiefe 8 ist für den Bootloader ausreichend, kann aber für
+ komplexere Applikationen Schwierigkeiten bereiten.
+ Einfachere Applikationen sollten dagegen mit einem kleineren Stack zurechtkomme
+n.
+\layout Standard
+
+Die Wortbreite kann auch der Applikation angepaßt werden.
+ So wird eine auf 12 Bit abgemagerte Version in einem Projekt bei meinem
+ Arbeitgeber Mikron AG eingesetzt.
+ Dabei muß man natürlich noch das Decodieren der einzelnen Befehle im Slot
+ ändern, und die Logik zum Überspringen des ersten 
+\family typewriter 
+nop
+\family default 
+s anpassen.
+\layout Standard
+
+Außerdem kann man natürlich einzelne Befehle auswechseln.
+ So wird bei der 12-Bit-Version kein Byte-Zugriff auf den Speicher benötigt,
+ aber relativ viele Bit-Zugriffe.
+ Entsprechend werden die Byte-Zugriffe dann durch Bit-Operationen auf den
+ obersten Teil des Speichers ersetzt, und das Register incby wegoptimiert
+ (nur noch Wort-Zugriffe).
+\layout Section
+
+Entwicklungsumgebung
+\layout Standard
+
+Hier könnte ich noch ein etwas längeres Listing präsentieren, diesmal in
+ Forth.
+ Ich will mich aber auf eine Funktions-Beschreibung beschränken.
+ Alle drei Programme sind in einer einzigen Datei vereint, und erlauben
+ damit eine interaktive Benutzung des Simulators und des Targets.
+\layout Subsection
+
+Assembler
+\layout Standard
+
+Der Assembler ist leicht an 
+\noun on 
+Chuck Moore
+\noun default 
+'s ColorForth angelehnt.
+ Es gibt aber keine Farben, sondern nur normale Interpunktion, wie in Forth
+ üblich.
+ Der Assembler ist schließlich in Forth geschrieben, und erwartet damit
+ Forth-Tokens.
+\layout Standard
+
+Labels definiert man mit 
+\family typewriter 
+:
+\family default 
+ und 
+\family typewriter 
+|
+\family default 
+.
+ Erstere geben automatisch einen Call, können aber mit 
+\family typewriter 
+'
+\family default 
+ auf den Stack gelegt werden.
+ Letztere entsprechen etwa einem interaktiven 
+\family typewriter 
+Create
+\family default 
+.
+ Labels können nur rückwärts aufgelöst werden.
+ Literals muß man explizit mit 
+\family typewriter 
+#
+\family default 
+ oder 
+\family typewriter 
+#c
+\family default 
+ vom Stack nehmen.
+ Die Zuordnung in Slots nimmt der Assembler selber in die Hand.
+ Ein 
+\family typewriter 
+ret
+\family default 
+ compiliert man normal mit einem 
+\family typewriter 
+;
+\family default 
+, der vorangestellte Calls in einen 
+\family typewriter 
+jmp
+\family default 
+ konvertiert.
+ Man kann Makros definieren (
+\family typewriter 
+macro:
+\family default 
+ \SpecialChar \ldots{}
+ 
+\family typewriter 
+end-macro
+\family default 
+).
+\layout Standard
+
+Auch die aus Forth bekannten Kontrollstrukturen können (bzw.
+ müssen --- für Vorwärtssprünge) verwendet werden.
+ 
+\family typewriter 
+IF
+\family default 
+ wird zu einem 
+\family typewriter 
+jz
+\family default 
+, 
+\family typewriter 
+jnz
+\family default 
+ erreicht man mit 
+\family typewriter 
+-IF
+\family default 
+.
+ 
+\family typewriter 
+cIF
+\family default 
+ und 
+\family typewriter 
+-cIF
+\family default 
+ entsprechen 
+\family typewriter 
+jnc
+\family default 
+ und 
+\family typewriter 
+jc
+\family default 
+.
+ Entsprechende Prefixes gibt es auch für 
+\family typewriter 
+WHILE
+\family default 
+ und 
+\family typewriter 
+UNTIL
+\family default 
+.
+\layout Subsection
+
+Downloader
+\layout Standard
+
+Im FPGA ist ein Stück Block-RAM mit einem Programm vorbelegt, dem Boot-Loader.
+ Dieses kleine Programm läßt ein Lauflicht laufen, und wartet auf Kommandos
+ über die serielle Schnittstelle (115.2kBaud, 8N1, kein Handshake).
+ Es gibt drei Kommandos, die mit ASCII-Zeichen eingeleitet werden:
+\layout Description
+
+0
+\emph on 
+ addr, len, <len
+\begin_inset Formula $*$
+\end_inset 
+
+data>: 
+\emph default 
+Programmiere den Speicherbereich ab 
+\emph on 
+addr
+\emph default 
+ mit 
+\emph on 
+len
+\emph default 
+ Datenbytes
+\layout Description
+
+1 
+\emph on 
+addr, len: 
+\emph default 
+Lese 
+\emph on 
+len
+\emph default 
+ Bytes vom Speicherbereich ab 
+\emph on 
+addr
+\emph default 
+ zurück
+\layout Description
+
+2 
+\emph on 
+addr: 
+\emph default 
+Führe das Wort an 
+\emph on 
+addr
+\emph default 
+ aus.
+\layout Standard
+
+Diese drei Befehle reichen aus, um den b16 interaktiv zu bedienen.
+ Auch auf der Host-Seite reichen ein paar Befehle aus:
+\layout Description
+
+comp Kompiliert bis zum Ende der Zeile, und schickt das Ergebnis an das
+ Eval-Board
+\layout Description
+
+eval Kompiliert bis zum Ende der Zeile, schickt das Ergebnis ans Eval-Board,
+ führt den Code aus, und setzt den RAM-Pointer des Assemblers zurück an
+ den Ausgangspunkt
+\layout Description
+
+sim Wie 
+\family typewriter 
+eval
+\family default 
+, nur wird das Kompilat nicht vom FPGA ausgeführt, sondern vom Emulator
+\layout Description
+
+check ( addr u --- ) Liest den entsprechenden Speicherbereich vom Eval-Board,
+ und zeigt ihn mit 
+\family typewriter 
+dump
+\family default 
+ an
+\layout Section
+
+Ausblick
+\layout Standard
+
+Mehr Material gibt's auf meiner Homepage 
+\begin_inset LatexCommand \cite{web}
+
+\end_inset 
+
+.
+ Alle Quellen sind unter GPL verfügbar.
+ Wer ein bestücktes Board haben will, wendet sich am besten an 
+\noun on 
+Hans Eckes
+\noun default 
+.
+ Und wer den b16 kommerziell verwenden will, an mich.
+\layout Bibliography
+\bibitem {c18}
+
+
+\emph on 
+c18 ColorForth Compiler,
+\emph default 
+ 
+\noun on 
+Chuck Moore
+\noun default 
+, 
+\begin_inset Formula $17^{\mathrm{th}}$
+\end_inset 
+
+ EuroForth Conference Proceedings, 2001
+\layout Bibliography
+\bibitem {web}
+
+
+\emph on 
+b16 Processor, 
+\emph default 
+\noun on 
+Bernd Paysan
+\noun default 
+, Internet Homepage, 
+\begin_inset LatexCommand \url[http://www.jwdt.com/~paysan/b16.html]{http://www.jwdt.com/~paysan/b16.html}
+
+\end_inset 
+
+
+\the_end

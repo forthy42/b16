@@ -1,0 +1,362 @@
+#LyX 1.3 created this file. For more info see http://www.lyx.org/
+\lyxformat 221
+\textclass slides
+\begin_preamble
+% Uncomment to print out only slides and overlays
+%
+%\onlyslides{\slides}
+
+% Uncomment to print out only notes
+%
+%\onlynotes{\notes}
+\end_preamble
+\language german
+\inputencoding latin1
+\fontscheme ae
+\graphics dvips
+\paperfontsize default
+\spacing single 
+\papersize a4paper
+\paperpackage a4
+\use_geometry 0
+\use_amsmath 0
+\use_natbib 0
+\use_numerical_citations 0
+\paperorientation landscape
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\defskip medskip
+\quotes_language german
+\quotes_times 2
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+
+\layout Slide
+
+
+\lang english
+Title
+\layout Standard
+\align center 
+
+\series bold 
+\size giant 
+Ein GCC für den b16
+\layout Standard
+\align center 
+
+\series bold 
+\size giant 
+\noun on 
+Bernd Paysan
+\layout Slide
+
+Motivation
+\layout Standard
+
+
+\series bold 
+Motivation
+\layout Itemize
+
+Kunden wollen C
+\layout Itemize
+
+Sieht professionell aus
+\layout Itemize
+
+Weil's geht
+\layout Itemize
+
+Vorbild: GCC für PicoJava
+\layout Itemize
+
+Codegröße und Geschwindigkeit von C für den Kunden weitgehend egal (8051
+ ist schlimmer)
+\layout Slide
+
+Machines
+\layout Standard
+
+
+\series bold 
+Unterschiedliche Machinen-Modelle
+\layout Description
+
+GCC: Register-Maschine mit komplexen Adressierungsarten (VAX, 68k)
+\layout Description
+
+b16: Stackmaschine mit explizitem Load/Store über's A-Register
+\layout Description
+
+Unterschied: Unterschiedlicher geht's nicht
+\layout Description
+
+Lösung: Emulation der Register-Maschine, 
+\begin_inset Quotes pld
+\end_inset 
+
+Register
+\begin_inset Quotes grd
+\end_inset 
+
+ im RAM.
+ Bringt man den 
+\begin_inset Quotes gld
+\end_inset 
+
+Register
+\begin_inset Quotes grd
+\end_inset 
+
+-Identifier in einem Byte unter, kriegt man so 128 16-Bit-Register.
+\layout Slide
+
+Befehlsformat
+\layout Description
+
+Register\SpecialChar ~
+Quelle: 
+\family typewriter 
+%Rx 
+\begin_inset Formula $\Rightarrow$
+\end_inset 
+
+ x # >A A@ 
+\begin_inset Formula $=$
+\end_inset 
+
+ x # @
+\layout Description
+
+Register\SpecialChar ~
+Ziel: 
+\family typewriter 
+%Qx 
+\begin_inset Formula $\Rightarrow$
+\end_inset 
+
+ x # >A A! 
+\begin_inset Formula $=$
+\end_inset 
+
+ x # !
+\layout Description
+
+Addressierung:
+\family typewriter 
+ n[%Rx] 
+\begin_inset Formula $\Rightarrow$
+\end_inset 
+
+ x # @ n # + @/!
+\layout Description
+
+Literals: 
+\family typewriter 
+#n 
+\begin_inset Formula $\Rightarrow$
+\end_inset 
+
+ n #
+\layout Description
+
+Befehl: 
+\family typewriter 
+add %R1, %R2, %Q3 
+\begin_inset Formula $\Rightarrow$
+\end_inset 
+
+ 1 # @ 2 # @ + 3 # ! 
+\layout Description
+
+Control\SpecialChar ~
+Flow: 
+\family typewriter 
+bcpugt %R1, %R2, dest 
+\begin_inset Formula $\Rightarrow$
+\end_inset 
+
+ 1 # @ 2 # @ com + dest jnc
+\layout Slide
+
+Verbesserung
+\layout Standard
+
+
+\series bold 
+Architektur-Anpassungen an C
+\layout Standard
+
+Eine Möglichkeit, den b16 für den GCC kompakter zu machen, wäre es, zwei
+ Befehle zu bauen, die die Schritte 
+\family typewriter 
+# >A A@/!
+\family default 
+ in einem Befehl codiert.
+ Dann müßte man aber auf zwei andere Befehle verzichten.
+ Kompromiss: 
+\family typewriter 
+# >A
+\family default 
+ an Stelle von 
+\family typewriter 
+c#
+\layout Standard
+
+Destruktive Conditionals: Da diese Emulation nichts mit auf dem Stack herumliege
+nde Reste von Vergleichen anfangen kann, sollte mal alle Conditionals (wie
+ in normalem Forth) das Argument konsumieren lassen.
+\layout Slide
+
+Machine Description File
+\layout Standard
+
+GCC sucht sich Befehle aus einer Machine-Description-File.
+\layout Standard
+
+Beispiel: Addition
+\layout LyX-Code
+
+
+\size small 
+(define_insn "addsi3" 
+\layout LyX-Code
+
+
+\size small 
+ [(set (match_operand:SI 0 "nonimmediate_operand" "=gD")      
+\layout LyX-Code
+
+
+\size small 
+       (plus:SI (match_operand:SI 1 "general_operand" "%gS")
+\layout LyX-Code
+
+
+\size small 
+                (match_operand:SI 2 "general_operand" "gS")))]
+\layout LyX-Code
+
+
+\size small 
+ ""
+\layout LyX-Code
+
+
+\size small 
+ "%S1 %S2 + %R0") 
+\layout Slide
+
+Zu unterstützenden Befehle
+\layout Standard
+
+GCC erwartet eine Reihe Befehle: Moves, Arithmetik, Shift, Mul/Div, Compare,
+ bedingte Sprünge, Calls, Jumps (direkt und indirekt).
+ Auch block moves und Funktionen wie strlen() können direkt in Befehle umgesetzt
+ werden.
+\layout Standard
+
+Da viele Befehle ähnlich aufgebaut sind, verwende ich den m4-Makroprozessor,
+ um weniger tippen zu müssen.
+\layout Standard
+
+Leider gibt's kein minimales Beispiel, von dem man ausgehen könnte, und
+ später Erweiterungen hinzufügen könnte.
+\layout Slide
+
+.h-File
+\layout Standard
+
+Register und Fähigkeiten werden über eine längliche .h-Datei beschrieben.
+ Auch hier gibt's keine Minimal-Datei, von der man ausgehen könnte.
+ Einige der wichtigsten Makros sind:
+\layout LyX-Code
+
+#define TARGET_VERSION  fputs ("(b16)", stderr); 
+\layout LyX-Code
+
+#define BYTES_BIG_ENDIAN 1 
+\layout LyX-Code
+
+#define BITS_PER_UNIT  8 
+\layout LyX-Code
+
+#define UNITS_PER_WORD  2 
+\layout LyX-Code
+
+#define POINTER_SIZE  16 
+\layout LyX-Code
+
+#define FIRST_PSEUDO_REGISTER 128 
+\layout Slide
+
+.c-File
+\layout Standard
+
+Für die Code-Generierungs-Templates in der Machine-Description muß man C-Funktio
+nen schreiben.
+ Diese Funktionen spucken die entsprechende Befehls-Sequenz aus.
+ Die wichtigste Funktion ist dabei 
+\family typewriter 
+print_operand
+\family default 
+.
+ Diese Funktion wird für jedes %-Argument im Assembler-String aufgerufen,
+ und bekommt den Buchstaben und das als Parameter.
+\layout Slide
+
+Optimierungen
+\layout Standard
+
+
+\series bold 
+Optimierungen
+\layout Itemize
+
+Unnötige Zwischenergebnisse wegwerfen:
+\begin_deeper 
+\layout Standard
+
+
+\family typewriter 
+a # @ b # @ + z # ! z # @ c # @ + z # !
+\layout Standard
+
+wird zu
+\family typewriter 
+ a # @ b # @ + c # @ + z # !
+\end_deeper 
+\layout Itemize
+
+Vereinfachungen:
+\begin_deeper 
+\layout Standard
+
+
+\family typewriter 
+a # @ a # @ + z # !
+\layout Standard
+
+wird zu
+\family typewriter 
+ a # @ dup + z # !
+\end_deeper 
+\layout Slide
+
+Status
+\layout Standard
+
+
+\series bold 
+Status
+\layout Standard
+
+Was hier eingentlich stehen sollte, sind ein paar Ergebnisse (Benchmarks
+ und so).
+ Leider ist der GCC-Port bis zur Tagung nicht fertig geworden.
+ Deshalb gibt's auch kein fertiges Paper.
+ Ich werde das Ergebnis aber in einem VD-Artikel präsentieren.
+\the_end

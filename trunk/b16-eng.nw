@@ -1,0 +1,1060 @@
+%% LyX 1.3 created this file.  For more info, see http://www.lyx.org/.
+%% Do not edit unless you really know what you are doing.
+\documentclass[twocolumn,american]{article}
+\usepackage{ae}
+\usepackage{aecompl}
+\usepackage[T1]{fontenc}
+\usepackage[latin1]{inputenc}
+\usepackage{a4wide}
+\usepackage{geometry}
+\geometry{verbose,a4paper,lmargin=0.5in,rmargin=0.5in}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\usepackage{graphicx}
+\IfFileExists{url.sty}{\usepackage{url}}
+                      {\newcommand{\url}{\texttt}}
+
+\makeatletter
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% LyX specific LaTeX commands.
+\newcommand{\noun}[1]{\textsc{#1}}
+%% Bold symbol macro for standard LaTeX users
+\newcommand{\boldsymbol}[1]{\mbox{\boldmath $#1$}}
+
+%% Because html converters don't know tabularnewline
+\providecommand{\tabularnewline}{\\}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Textclass specific LaTeX commands.
+ \usepackage{noweb}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% User specified LaTeX commands.
+\usepackage[dvips,colorlinks=true,linkcolor=blue]{hyperref}
+
+\usepackage{babel}
+\makeatother
+\begin{document}
+
+\title{b16 --- A Forth Processor in an FPGA}
+
+
+\author{\noun{Bernd Paysan}}
+
+\maketitle
+\lhead{b16 --- A Forth Processor in an FPGA}\chead{\noun{Bernd
+Paysan}}
+
+\begin{abstract}
+This article presents architecture and implementation of the b16 stack
+processor. This processor is inspired by \noun{Chuck Moore'}s newest
+Forth processors. The minimalistic design fits into small FPGAs and
+ASICs and is ideally suited for applications that need both control
+and calculations. The synthesizible implementation uses Verilog.
+\end{abstract}
+
+\section*{Introduction}
+
+Minimalistic CPUs can be used in many designs. A state machine often
+is too complicated and too difficult to develop, when there are more
+than a few states. A program with subroutines can perform a lot more
+complex tasks, and is easier to develop at the same time. Also, ROM-
+and RAM blocks occupy much less place on silicon than {}``random
+logic''. That's also valid for FPGAs, where {}``block RAM'' is
+--- in contrast to logic elements --- plenty.
+
+The architecture is inspired by the c18 from \noun{Chuck Moore}
+\cite{c18}. The exact instruction mix is different. I traded \texttt{2{*}}
+and \texttt{2/} against division step and Forth-typical logic operations;
+these two instructions can be implemented as short macro. Also, this
+architecture is byte-addressed.
+
+The original concept (which was synthesizible, and could execute a
+small sample program) was written in an afternoon. The current version
+is somewhat faster, and really runs on a Altera Flex10K30E on a FPGA
+evaluation board from \noun{Hans Eckes}. Size and speed of the processor
+can be evaluated.
+
+\begin{description}
+\item [Flex10K30E]About 600 LCs, the unit for logic cells in Altera%
+\footnote{A logic cell can compute a logic function with four inputs and one
+output, or a full-adder, and also contains a flip-flop.%
+}. The logic to interface with the eval board needs another 100 LCs.
+The slowest model runs at up to 25MHz.
+\item [Xfab~0.6\ensuremath{µ}]$\sim$1mm\ensuremath{²} with 8 stack elements,
+that's a technology with only 2 metal layers.
+\item [TSMC~0.5\ensuremath{µ}]$<$0.4mm\ensuremath{²} with 8 stack elements,
+this technology has 3 metal layers. With a somewhat optimized ALU
+the 5V library reaches 100MHz.
+\end{description}
+The complete development (excluding board layout and test synthesis
+for ASIC processes) was done with free or zero cost tools. Icarus
+Verilog in the current version is quite useful for projects in this
+order of magnitude, and Quartus II Web Edition is a big chunk to download,
+but doesn't cost anything (downside: Windows NT, the version for real
+operating system costs real money).
+
+A word about Verilog: Verilog is a C-like language, but tailored for
+the purpose to simulate logic, and to write synthesizible code. Variables
+are bits and bit vectors, and assignments are typically non-blocking,
+i.e. on assignments first all right sides are computed, and the left
+sides are modified afterwards. Also, Verilog has events, like changing
+of values or clock edges, and blocks can wait on them.
+
+
+\section{Architectural Overview}
+
+The core components are
+
+\begin{itemize}
+\item An ALU
+\item A data stack with top and next of stack (T and N) as inputs for the
+ALU
+\item A return stack, where the top of return stack (R) can be used as address
+\item An instruction pointer P 
+\item An address register A 
+\item An address latch \texttt{addr}, to address external memory
+\item An instruction latch I
+\end{itemize}
+Figure \ref{blockdiagram} shows a block diagram.
+
+%
+\begin{figure}
+\begin{center}\includegraphics[%
+  width=1.0\columnwidth]{b16.eps}\end{center}
+
+
+\caption{Block Diagram\label{blockdiagram}}
+\end{figure}
+
+
+
+\subsection{Register}
+
+In addition to the user-visible latches there are control latches
+for external RAM (\texttt{rd} and \texttt{wr}), stack pointers (\texttt{sp}
+and \texttt{rp}), a carry \texttt{c} and the flag \texttt{incby},
+by which \texttt{addr} is incremented.
+
+\medskip{}
+\begin{center}\begin{tabular}{|c|l|}
+\hline 
+\emph{Name}&
+\emph{Function}\tabularnewline
+\hline
+\hline 
+T&
+Top of Stack\tabularnewline
+\hline 
+N&
+Next of Stack\tabularnewline
+\hline 
+I&
+Instruction Bundle\tabularnewline
+\hline 
+P&
+Program Counter\tabularnewline
+\hline 
+A&
+Address Register\tabularnewline
+\hline 
+addr&
+Address Latch\tabularnewline
+\hline 
+state&
+Processor State\tabularnewline
+\hline 
+sp&
+Stack Pointer\tabularnewline
+\hline 
+rp&
+Return Stack Pointer\tabularnewline
+\hline 
+c&
+Carry Flag\tabularnewline
+\hline 
+incby&
+Increment Address by byte/word\tabularnewline
+\hline
+\end{tabular}\end{center}
+\medskip{}
+
+<<register declarations>>=
+reg    rd;
+reg [1:0] wr;
+reg [sdep-1:0] sp;
+reg [rdep-1:0] rp;
+
+reg `L T, N, I, P, A, addr;
+
+reg [2:0] state;
+reg c;
+reg incby;
+reg intack;
+@
+
+
+\section{Instruction Set}
+
+There are 32 different instructions. Since several instructions fit
+into a 16 bit word, we call the bits to store the packed instructions
+in an instruction word {}``slot'', and the instruction word itself
+{}``bundle''. The arrangement here is 1,5,5,5, i.e. the first slot
+is only one bit large (the more significant bits are filled with 0),
+and the others all 5 bits.\filbreak
+
+The operations in one instruction word are executed one after the
+other. Each instruction takes one cycle, memory operation (including
+instruction fetch) need another cycle. Which instruction is to be
+executed is stored in the variable \texttt{state}.\filbreak
+
+The instruction set is divided into four groups: jumps, ALU, memory,
+and stack. Table \ref{instructions} shows an overview over the instruction
+set.%
+\begin{table*}
+\begin{center}\begin{tabular}{|c|c|c|c|c|c|c|c|c|l|}
+\hline 
+&
+0 &
+1 &
+2 &
+3 &
+4 &
+5 &
+6 &
+7 &
+\emph{Comment}\tabularnewline
+\hline
+0 &
+nop&
+call&
+jmp&
+ret&
+jz&
+jnz&
+jc&
+jnc&
+\tabularnewline
+&
+&
+exec&
+goto&
+ret&
+gz&
+gnz&
+gc&
+gnc&
+\emph{for slot 3 }\tabularnewline
+\hline
+8 &
+xor&
+com&
+and&
+or&
++&
++c&
+$*+$&
+/--&
+\tabularnewline
+\hline
+10 &
+A!+&
+A@+&
+R@+&
+lit&
+Ac!+&
+Ac@+&
+Rc@+&
+litc&
+\tabularnewline
+&
+A!&
+A@&
+R@&
+lit&
+Ac!&
+Ac@&
+Rc@&
+litc&
+\emph{for slot 1} \tabularnewline
+\hline
+18 &
+nip&
+drop&
+over&
+dup&
+>r&
+>a&
+r>&
+a&
+ \tabularnewline
+\hline
+\end{tabular}\end{center}
+
+
+\caption{Instruction Set\label{instructions}}
+\end{table*}
+\filbreak
+
+Jumps use the rest of the instruction word as target address (except
+\texttt{ret}). The lower bits of the instruction pointer P are replaced,
+there's nothing added. For instructions in the last slot, no address
+remains, so they use T (TOS) as target.\filbreak
+
+<<instruction selection>>=
+// instruction and branch target selection   
+reg [4:0] inst;
+reg `L jmp;
+
+always @(state or I)
+   case(state[1:0])
+     2'b00: inst <= { 4'b0000, I[15] };
+     2'b01: inst <=   I[14:10];
+     2'b10: inst <=   I[9:5];
+     2'b11: inst <=   I[4:0];
+   endcase // casez(state)
+
+always @(state or I or P or T)
+   case(state[1:0])
+     2'b00: jmp <= { I[14:0], 1'b0 };
+     2'b01: jmp <= { P[15:11], I[9:0], 1'b0 };
+     2'b10: jmp <= { P[15:6], I[4:0], 1'b0 };
+     2'b11: jmp <= { T[15:1], 1'b0 };
+   endcase // casez(state)
+@
+
+The instructions themselves are executed depending on \texttt{inst}:
+
+<<instructions>>=
+casez(inst)
+   <<control flow>>
+   <<ALU operations>>
+   <<load/store>>
+   <<stack operations>>
+endcase // case(inst)
+@
+
+
+\subsection{Jumps}
+
+In detail, jumps are performed as follows: the target address is stored
+in the address latch \texttt{addr}, which addresses memory, not in
+the P register. The register P will be set to the incremented value
+of \texttt{addr}, after the instruction fetch cycle. Apart from \texttt{call},
+\texttt{jmp} and \texttt{ret} there are conditional jumps, which test
+for 0 and carry. The lowest bit of the return stack is used to save
+the carry flag across calls. Conditional instructions don't consume
+the tested value, which is different from Forth.\filbreak
+
+To make it easier to understand, I also define the effect of an instruction
+in a pseudo language:\filbreak
+
+\begin{description}
+\item [nop]( --- )\filbreak
+\item [call]( --- r:P ) $\mathrm{P}\leftarrow jmp$; $\mathrm{c}\leftarrow0$
+\filbreak
+\item [jmp]( --- ) $\mathrm{P}\leftarrow jmp$\filbreak
+\item [ret]( r:a --- ) $\mathrm{P}\leftarrow a\wedge\$\mathrm{FFFE}$;
+$\mathrm{c}\leftarrow a\wedge1$ \filbreak
+\item [jz]( n --- n ) $\mathbf{if}(n=0)\,\mathrm{P}\leftarrow jmp$ \filbreak
+\item [jnz]( n --- n ) $\mathbf{if}(n\ne0)\,\mathrm{P}\leftarrow jmp$
+\filbreak
+\item [jc]( --- ) $\mathbf{if}(c)\,\mathrm{P}\leftarrow jmp$ \filbreak
+\item [jnc]( --- ) $\mathbf{if}(c=0)\,\mathrm{P}\leftarrow jmp$ \filbreak
+\end{description}
+<<control flow>>=
+5'b00001: begin
+   rp <= rpdec;
+   addr <= jmp;
+   c <= 1'b0;
+   if(state == 3'b011) `DROP;
+end // case: 5'b00001
+5'b00010: begin
+   addr <= jmp;
+   if(state == 3'b011) `DROP;
+end
+5'b00011: begin
+   { c, addr } <= { R[0], R[l-1:1], 1'b0 };
+   rp <= rpinc;
+end // case: 5'b01111
+5'b001??: begin
+   if((inst[1] ? c : zero) ^ inst[0]) 
+      addr <= jmp;
+   if(state == 3'b011) `DROP;
+end
+@
+
+
+\subsection{ALU Operations}
+
+The ALU instructions use the ALU, which computes a result \texttt{res}
+and a carry bit from T and N. The instruction \texttt{com} is an exception,
+since it only inverts T --- that doesn't require an ALU.\filbreak
+
+The two instructions \texttt{{*}+} (multiplication step) and \texttt{/-}
+(division step) shift the result into the A register and carry bit. \texttt{{*}+}
+adds N to T, when the carry bit is set, and shifts the result one
+step right.\filbreak
+
+\texttt{/-} also adds N to T, but also tests, if there is an overflow,
+or if the old carry was set. The result is shifted one to the left.\filbreak
+
+Ordinary ALU instructions just write the result of the ALU into T
+and c, and reload N.\filbreak
+
+\begin{description}
+\item [xor]( a b --- r ) $r\leftarrow a\oplus b$\filbreak
+\item [com]( a --- r ) $r\leftarrow a\oplus\$\mathrm{FFFF}$, $\mathrm{c}\leftarrow1$\filbreak
+\item [and]( a b --- r ) $r\leftarrow a\wedge b$\filbreak
+\item [or]( a b --- r ) $r\leftarrow a\vee b$\filbreak
+\item [+]( a b --- r ) $\mathrm{c},r\leftarrow a+b$\filbreak
+\item [+c]( a b --- r) $\mathrm{c},r\leftarrow a+b+\mathrm{c}$\filbreak
+\item [$*$+]( a b --- a r ) $\mathbf{if}(\mathrm{c})\, c_{n},r\leftarrow a+b\,\mathbf{else}\, c_{n},r\leftarrow0,b$;
+$r,\mathrm{A},\mathrm{c}\leftarrow c_{n},r,\mathrm{A}$\filbreak
+\item [/--]( a b --- a r ) $c_{n},r_{n}\leftarrow a+b+1;$ $\mathbf{if}(\mathrm{c}\vee c_{n})\, r\leftarrow r_{n}$;
+$\mathrm{c},r,\mathrm{A}\leftarrow r,\mathrm{A},\mathrm{c}\vee c_{n}$
+\filbreak
+\end{description}
+<<ALU operations>>=
+5'b01001: { c, T } <= { 1'b1, ~T };
+5'b01110: { T, A, c } <= 
+   { c ? { carry, res } : { 1'b0, T }, A };
+5'b01111: { c, T, A } <= 
+   { (c | carry) ? res : T, A, (c | carry) };
+5'b01???: begin
+   c <= carry;
+   { sp, T, N } <= { spinc, res, toN };
+end // case: 5'b01???
+@
+
+
+\subsection{Memory Instructions}
+
+\noun{Chuck Moore} doesn't use the TOS as address any more, but
+has introduced the A register. When you want to copy memory areas,
+you need a second address register, that's what he uses the top of
+return stack R for. Since P has to be incremented after each instruction
+fetch (to point to the next instruction), the address logic must have
+auto increment. This will also be used for other accesses.\filbreak
+
+Memory instructions which use the first slot, and don't index over
+P, don't increment the pointer; that's to realize read-modify-write
+instructions like \texttt{+!}. Write access is only possible via A,
+the two other pointers can only be used for read access.\filbreak
+
+\begin{description}
+\item [A!+]( n --- ) $mem[\mathrm{A}]\leftarrow n$; $\mathrm{A}\leftarrow\mathrm{A}+2$\filbreak
+\item [A@+]( --- n ) $n\leftarrow mem[\mathrm{A}]$; $\mathrm{A}\leftarrow\mathrm{A}+2$\filbreak
+\item [R@+]( --- n ) $n\leftarrow mem[\mathrm{R}]$; $\mathrm{R}\leftarrow\mathrm{R}+2$\filbreak
+\item [lit]( --- n ) $n\leftarrow mem[\mathrm{P}]$; $\mathrm{P}\leftarrow\mathrm{P}+2$\filbreak
+\item [Ac!+]( c --- ) $mem.b[\mathrm{A}]\leftarrow c$; $\mathrm{A}\leftarrow\mathrm{A}+1$\filbreak
+\item [Ac@+]( --- c ) $c\leftarrow mem.b[\mathrm{A}]$; $\mathrm{A}\leftarrow\mathrm{A}+1$\filbreak
+\item [Rc@+]( --- c ) $c\leftarrow mem.b[\mathrm{R}]$; $\mathrm{R}\leftarrow\mathrm{R}+1$\filbreak
+\item [litc]( --- c ) $c\leftarrow mem.b[\mathrm{P}]$; $\mathrm{P}\leftarrow\mathrm{P}+1$\filbreak
+\end{description}
+<<address handling>>=
+wire `L toaddr, incaddr, toR, R;
+wire tos2r;
+
+assign toaddr = inst[1] ? (inst[0] ? P : R) : A;
+assign incaddr = 
+    { addr[l-1:1] + (incby | addr[0]), 
+                   ~(incby | addr[0]) };
+assign tos2r = inst == 5'b11100;
+assign toR = state[2] ? incaddr : 
+             (tos2r ? T : { P[15:1], c });
+@
+
+Memory access can't just be done word wise, but also byte wise. Therefore
+two write lines exist. For byte wise store the lower byte of T is
+copied to the higher one.
+
+<<load/store>>=
+5'b10000: begin
+   addr <= toaddr;
+   wr <= 2'b11;
+end
+5'b10100: begin
+   addr <= toaddr;
+   wr <= { ~toaddr[0], toaddr[0] };
+   T <= { T[7:0], T[7:0] };
+end
+5'b10???: begin 
+   addr <= toaddr;
+   rd <= 1'b1;
+end
+@
+
+Memory accesses need an extra cycle. Here the result of the memory
+access is handled.
+
+<<load-store>>=
+if(show) begin
+   <<debug>>
+end
+state <= nextstate;
+<<pointer increment>>
+rd <= 1'b0; 
+wr <= 2'b0; 
+if(|state[1:0]) begin 
+   <<store afterwork>>
+end else begin 
+   <<ifetch>>
+end 
+<<next>>
+@
+
+There's a special case for the instruction fetch (the NEXT of the
+machine): when the current instruction is a literal, we must use \texttt{inc\-addr}
+instead of P.
+
+<<next>>=
+if(nextstate == 3'b100) begin 
+    { addr, rd } <= { &inst[1:0] ? 
+                      incaddr : P, 1'b1 }; 
+end // if (nextstate == 3'b100)
+@
+
+<<debug>>=
+$write("%b[%b] T=%b%x:%x[%x], ",
+       inst, state, c, T, N, sp);
+$write("P=%x, I=%x, A=%x, R=%x[%x], res=%b%x\n",
+       P, I, A, R, rp, carry, res);
+@
+
+After the access is completed, the result for a load has to be pushed
+on the stack, or into the instruction register; for stores, the TOS
+is to be dropped.
+
+<<store afterwork>>=
+if(rd) 
+   if(incby) 
+      { sp, T, N } <= { spdec, data, T }; 
+   else 
+      { sp, T, N } <= { spdec, 8'h00,
+        addr[0] ? data[7:0] : data[l-1:8], T }; 
+if(|wr) 
+   `DROP; 
+incby <= 1'b1; 
+@
+
+Furthermore, the incremented address may go back to the pointer.
+
+<<pointer increment>>=
+casez({ state[1:0], inst[1:0] }) 
+   4'b00??: P <= !intreq ? incaddr : addr; 
+   4'b1?0?: A <= incaddr; 
+// 4'b1?10: R <= incaddr; 
+   4'b??11: P <= incaddr; 
+endcase // casez({ state[1:0], inst[1:0] }) 
+@
+
+To shortcut a \texttt{nop} in the first instruction, there's some
+special logic. That's the second part of NEXT.
+
+<<ifetch>>=
+intack <= intreq;
+if(intreq)
+  I <= { 8'h81, intvec }; // call $200+intvec*2
+else
+  I <= data; 
+if(!intreq & !data[15]) state[1:0] <= 2'b01;
+@
+
+Here, we also handle interrupts. Interrupts are accepted at instruction
+fetch. Instead of incrementing P, we load a call to the interrupt
+vector (addresses from \$200) into the instruction register. The interrupt
+routine just has to save A (if needed), and has to balance the stack
+on return. Since three instructions can be executed without interrupt,
+there's no interrupt disable flag internally, only an external interrupt
+unit might do that. The last three instructions of such an interrupt
+routine then would be \texttt{a! >a ret}.
+
+
+\subsection{Stack Instructions}
+
+Stack instructions change the stack pointer and move values into and
+out of latches. With the 8 used stack operations, one notes that \texttt{swap}
+is missing. Instead, there's \texttt{nip}. The reason is a possible
+implementation option: it's possible to omit N, and fetch this value
+directly out of the stack RAM. This consumes more time, but saves
+space.\filbreak
+
+Also, \noun{Chuck Moore} claims, that you don't need \texttt{swap}
+--- if you don't have it, you help out with other stack operation,
+and there's nothing to do, there's still \texttt{>a >r a r>}.
+
+\begin{description}
+\item [nip]( a b --- b )\filbreak
+\item [drop]( a --- )\filbreak
+\item [over]( a b --- a b a )\filbreak
+\item [dup]( a --- a a )\filbreak
+\item [>r]( a --- r:a )\filbreak
+\item [>a]( a --- ) $\mathrm{A}\leftarrow a$\filbreak
+\item [r>]( r:a --- a )\filbreak
+\item [a]( --- a ) $a\leftarrow\mathrm{A}$\filbreak
+\end{description}
+<<stack operations>>=
+5'b11000: { sp, N } <= { spinc, toN };
+5'b11001: `DROP;
+5'b11010: { sp, T, N } <= { spdec, N, T };
+5'b11011: { sp, N } <= { spdec, T };
+5'b11100: begin
+   rp <= rpdec; `DROP;
+end // case: 5'b11100
+5'b11101: begin
+   A <= T; `DROP;
+end // case: 5'b11101
+5'b11110: begin
+   { sp, T, N } <= { spdec, R, T };
+   rp <= rpinc;
+end // case: 5'b11110
+5'b11111:  { sp, T, N } <= { spdec, A, T };
+@
+
+If you don't want to live without \texttt{swap}, you can replace the
+implementation of \texttt{nip} in the first line by:
+
+<<swap>>=
+5'b11000: { T, N } <= { N, T };
+@
+
+
+\section{Examples}
+
+A few examples show, how to program this processor. Multiplication
+works through the A register. There's one extra step necessary, since
+each bit first has to be shifted into the carry register. Since \texttt{call}
+clears carry, we don't have to do that here.\filbreak
+
+<<mul>>=
+: mul ( u1 u2 -- ud ) 
+  >A 0 # 
+  *+ *+ *+  *+ *+ *+  *+ *+ *+
+  *+ *+ *+  *+ *+ *+  *+ *+ 
+  >r drop a r> ; 
+@
+
+Division needs an extra step, too. Here, we need a real \texttt{swap},
+but since there is none, we first use \texttt{over} and accept that
+we have to use one extra stack item. Other than with \texttt{mul}
+we here need to clear the carry after \texttt{com}. And finally, we
+have to divide by two and shift in the carry.\filbreak
+
+<<div>>=
+: div ( ud udiv -- uqout umod ) 
+  com >r >r >a r> r> over 0 # +
+  /- /- /-  /- /- /-  /- /- /- 
+  /- /- /-  /- /- /-  /- /-
+  nip nip a >r -cIF *+ r> ; 
+  THEN 0 # + *+ $8000 # + r> ;
+@
+
+The next example is even more complicated, since I emulate a serial
+interface. At 10MHz, each bit takes 87 clock cycles, to get a 115200
+baud fast serial line. We add a second stop bit, to allow the other
+side to resynchronize, when the next bit arrives.\filbreak
+
+<<serial line>>=
+: send-rest ( c -- c' ) *+ 
+: wait-bit
+  1 # $FFF9 # BEGIN  over +  cUNTIL  drop drop ;
+: send-bit ( c -- c' ) 
+  nop \ delay at start
+: send-bit-fast ( c -- c' ) 
+  $FFFE # >a dup 1 # and 
+  IF    drop $0001 # a@ or  a!+ send-rest ; 
+  THEN  drop $FFFE # a@ and a!+ send-rest ;
+: emit ( c -- ) \ 8N1, 115200 baud 
+  >r 06 # send-bit r> 
+  send-bit-fast send-bit send-bit send-bit 
+  send-bit send-bit send-bit send-bit 
+  drop send-bit-fast send-bit drop ;
+@
+
+Like in ColorForth, \texttt{;} is just an EXIT, and \texttt{:} is
+used as label. If there's a call before \texttt{;}, this is converted
+to a jump. This saves return stack entries, time, and code space.\filbreak
+
+
+\section{The Rest of the Implementation}
+
+First the implementation file with comment and modules.
+
+<<b16.v>>=
+/*
+ * b16 core: 16 bits, 
+ * inspired by c18 core from Chuck Moore
+ *
+<<inst-comment>>
+ */
+ 
+`define L [l-1:0]
+`define DROP { sp, T, N } <= { spinc, N, toN } 
+`timescale 1ns / 1ns
+
+<<ALU>>
+<<Stack>>
+<<cpu>>
+@
+
+<<inst-comment>>= 
+ * Instruction set:
+ * 1, 5, 5, 5 bits
+ *     0    1    2    3    4    5    6    7
+ *  0: nop  call jmp  ret  jz   jnz  jc   jnc
+ *  /3      exec goto ret  gz   gnz  gc   gnc
+ *  8: xor  com  and  or   +    +c   *+   /-
+ * 10: A!+  A@+  R@+  lit  Ac!+ Ac@+ Rc@+ litc
+ *  /1 A!   A@   R@   lit  Ac!  Ac@  Rc@  litc
+ * 18: nip  drop over dup  >r   >a   r>   a
+@
+
+
+
+\subsection{Top Level}
+
+The CPU consists of several parts, which are all implemented in the
+same Verilog module.\filbreak
+
+<<cpu>>=
+module cpu(clk, reset, addr, rd, wr, data, T, 
+           intreq, intack, intvec);
+   <<port declarations>>
+   <<register declarations>>
+   <<instruction selection>>
+   <<ALU instantiation>>
+   <<address handling>>
+   <<stack pushs>>
+   <<stack instantiation>>
+   <<state changes>>
+
+   always @(posedge clk or negedge reset)
+      <<register updates>>
+
+endmodule // cpu
+@
+
+First, Verilog needs port declarations, so that it can now what's
+input and output. The parameter are used to configure other word sizes
+and stack depths.\filbreak
+
+<<port declarations>>=
+parameter show=0, l=16, sdep=3, rdep=3;
+input clk, reset;
+output `L addr;
+output rd;
+output [1:0] wr;
+input  `L data;
+output `L T;
+input  intreq;
+output intack;
+input [7:0] intvec; // interrupt jump vector
+@
+
+The ALU is instantiated with the configured width, and the necessary
+wires are declared
+
+<<ALU instantiation>>=
+wire `L res, toN;
+wire carry, zero;
+
+alu #(l) alu16(res, carry, zero, 
+               T, N, c, inst[2:0]);
+@
+
+Since the stacks work in parallel, we have to calculated, when a value
+is pushed onto the stack (thus \textbf{only} if something is stored
+there).\filbreak
+
+<<stack pushs>>=
+reg dpush, rpush;
+
+always @(clk or state or inst or rd)
+  begin
+     dpush <= 1'b0;
+     rpush <= 1'b0;
+     if(state[2]) begin
+        dpush <= |state[1:0] & rd;
+        rpush <= state[1] & (inst[1:0]==2'b10);
+     end else
+        casez(inst)
+          5'b00001: rpush <= 1'b1;
+          5'b11100: rpush <= 1'b1;
+          5'b11?1?: dpush <= 1'b1;
+        endcase // case(inst)
+  end
+@
+
+The stacks don't only consist of the two stack modules, but also need
+an incremented and decremented stack pointer. The return stack even
+allows to write the top of return stack even without changing the
+return stack depth.\filbreak
+
+<<stack instantiation>>=
+wire [sdep-1:0] spdec, spinc;
+wire [rdep-1:0] rpdec, rpinc;
+
+stack #(sdep,l) dstack(clk, sp, spdec, 
+                       dpush, N, toN);
+stack #(rdep,l) rstack(clk, rp, rpdec, 
+                       rpush, toR, R);
+
+assign spdec = sp-{{(sdep-1){1'b0}}, 1'b1};
+assign spinc = sp+{{(sdep-1){1'b0}}, 1'b1};
+assign rpdec = rp+{(rdep){(~state[2] | tos2r)}};
+assign rpinc = rp+{{(rdep-1){1'b0}}, 1'b1};
+@
+
+The basic core is the fully synchronous register update. Each register
+needs a reset value, and depending on the state transition, the corresponding
+assignments have to be coded. Most of that is from above, only the
+instruction fetch and the assignment of the next value of \texttt{incby}
+has to be done.\filbreak
+
+<<register updates>>=
+if(!reset) begin
+   <<resets>>
+end else if(state[2]) begin
+   <<load-store>>
+end else begin // if (state[2])
+   if(show) begin
+      <<debug>>
+   end
+   if(nextstate == 3'b100)
+      { addr, rd } <= { P, 1'b1 };
+   state <= nextstate;
+   incby <= (inst[4:2] != 3'b101);
+   <<instructions>>
+end // else: !if(reset)
+@
+
+As reset value, we initialize the CPU so that it is about to fetch
+the next instruction from address 0. The stacks are all empty, the
+registers contain all zeros.\filbreak
+
+<<resets>>=
+state <= 3'b011;
+incby <= 1'b0;
+P <= 16'h0000;
+addr <= 16'h0000;
+A <= 16'h0000;
+T <= 16'h0000;
+N <= 16'h0000;
+I <= 16'h0000;
+c <= 1'b0;
+rd <= 1'b0;
+wr <= 2'b00;
+sp <= 0;
+rp <= 0;
+intack <= 0;
+@
+
+The transition to the next state (the NEXT within a bundle) is done
+separately. That's necessary, since the assignments of the other variables
+are not just dependent on the current state, but partially also on
+the next state (e.g. when to fetch the next instruction word).\filbreak
+
+<<state changes>>=
+reg [2:0] nextstate;
+
+always @(inst or state)
+   if(state[2]) begin 
+      <<rw-nextstate>>
+   end else begin 
+      casez(inst) 
+         <<inst-nextstate>>
+      endcase // casez(inst[0:2]) 
+   end // else: !if(state[2]) end
+@
+
+<<rw-nextstate>>= 
+nextstate <= state[1:0] + { 2'b0, |state[1:0] }; 
+@
+
+<<inst-nextstate>>=
+5'b00000: nextstate <= state[1:0] + 3'b001; 
+5'b00???: nextstate <= 3'b100; 
+5'b10???: nextstate <= { 1'b1, state[1:0] }; 
+5'b?????: nextstate <= state[1:0] + 3'b001; 
+@
+
+
+\subsection{ALU}
+
+The ALU just computes the sum with possible carry-ins, the logical
+operations, and a zero flag. It would be possible to share common
+resources (the XORs of the full adder could also compute the XOR operation,
+and the carry propagation logic could compute OR and AND), but this
+optimization is left to the synthesis tool.\filbreak
+
+<<ALU>>=
+module alu(res, carry, zero, T, N, c, inst);
+   <<ALU ports>>
+   
+   wire        `L sum, logic;
+   wire        cout;
+   
+   assign { cout, sum } = 
+          T + N + ((c | andor) & selr);
+   assign logic = andor ? 
+                  (selr ? (T | N) : (T & N)) : 
+                  T ^ N;
+   assign { carry, res } =
+          prop ? { cout, sum } : { c, logic };
+   assign zero = ~|T;
+   
+endmodule // alu
+@
+
+The ALU has ports T and N, carry in, and the lowest 3 bits of the
+instruction as input, a result, carry out, and test for zero as output.\filbreak
+
+<<ALU ports>>=
+parameter l=16;
+input `L T, N;
+input c;
+input [2:0] inst;
+output `L res;
+output carry, zero;
+
+wire prop, andor, selr;
+
+assign #1 { prop, andor, selr } = inst;
+@
+
+
+\subsection{Stacks}
+
+The stacks are modeled as block RAM in the FPGA. Therefore, they should
+have only one port, since these block RAMs are available even in small
+FPGAs. In an ASIC, this sort of stack is implemented with latches.
+Here it's possible to separate read and write port (also for FPGAs
+that support dual-ported RAM), and save the multiplexer for \texttt{spset}.\filbreak
+
+<<Stack>>=
+module stack(clk, sp, spdec, push, in, out);
+   parameter dep=3, l=16;
+   input clk, push;
+   input [dep-1:0] sp, spdec; 
+   input `L in;
+   output `L out; 
+   reg `L stackmem[0:(1@<<dep)-1];
+   wire [dep-1:0]  spset;
+
+`ifdef BEH_STACK
+   always @(clk or push or spset or in)
+     if(push & ~clk) stackmem[spset] <= #1 in;
+ 
+   assign spset = push ? spdec : sp;
+   assign #1 out = stackmem[spset];
+`else
+   stackram stram(in, push, spdec, sp, ~clk, out);
+`endif
+endmodule // stack
+@
+
+
+\subsection{Further Possible Optimizations}
+
+It would be possible to overlap memory accesses and operations on
+the stack, since there are separate pointer registers. The understandability
+of the code would suffer, and the critical path would also be somewhat
+longer. With a guaranteed speed increase of 25\% (the cycle to fetch
+instructions would vanish), and a maximum acceleration by 100\% (for
+memory-intensive applications), this could be worth the trouble ---
+when there's enough space.
+
+If there's lack of space, it is possible to implement most registers
+as latches. Only T needs to be a real flip-flop. For FPGAs, this is
+not an option, flip-flops are cheaper there.
+
+
+\subsection{Scaling Issues}
+
+Two approaches allow to adopt the b16 to own preferences: word width
+and stack depth. The stack depth is easier. The chosen depth of 8
+is sufficient for the boot loader, but could cause problems for more
+complex applications. Simpler applications however should fit with
+a smaller stack.
+
+The word width can be adopted for the application, too. A version
+reduced to 12 bit (and also with a modified instruction set) is used
+in a project at my employer Mikron AG. This required to change the
+decoding of the instructions within the slot, and adopt the logic
+to step over the first \texttt{nop}.
+
+Furthermore, you can replace individual instructions. For the 12 bit
+version, it was found that bit operations occur very frequently, and
+byte accesses are completely irrelevant.\filbreak
+
+
+\section{Development Environment}
+
+I could present a longer listing here, this time in Forth. However,
+I'll just describe the functions. All three programs are put into
+one file, and allow interactive use of simulator and target.\filbreak
+
+
+\subsection{Assembler}
+
+The assembler resembles a bit \noun{Chuck Moore}'s ColorForth. There
+are no colors, just normal punctation, as common in forth. The assembler
+after all is coded in Forth, and therefore expects Forth tokens.\filbreak
+
+Labels are defined with \texttt{:} and \texttt{|}. The first one automatically
+call on reference, but can be put on stack with '. The last one more
+resemble an interactive \texttt{Create}. Labels are only resolved
+backwards. Literals must be taken from the stack explicitely with
+\texttt{\#} or \texttt{\#c}. The assembler takes care of the ordering
+within the slots. A \texttt{ret} is normally compiled with a \texttt{;},
+preceeding calls are converted to a \texttt{jmp}. You can define macros
+(\texttt{macro:} \ldots{} \texttt{end-macro}).
+
+Also the well-known control structures from Forth can be used (must
+be used for forward branches). \texttt{IF} becomes a \texttt{jz},
+\texttt{jnz} is reached with \texttt{-IF}. \texttt{cIF} and \texttt{-cIF}
+correspond \texttt{jnc} and \texttt{jc}. Similar prefixes are available
+for \texttt{WHILE} and \texttt{UNTIL}.\filbreak
+
+
+\subsection{Downloader}
+
+A piece of block RAM in the FPGA is occupied by a small program, the
+boot loader. This small program drives the LEDs, and waits for commands
+from the serial line (115.2KB-aud, 8N1, no handshake). There are three
+commands, starting with ASCII signs:
+
+\begin{description}
+\item [0]\emph{addr, len, <len$*$data>:} Programs memory from \emph{addr}
+with \emph{len} data bytes
+\item [1]\emph{addr, len:} Reads back \emph{len} bytes from memory starting
+at \emph{addr}
+\item [2]\emph{addr:} Execute the word at \emph{addr}
+\end{description}
+These three commands are sufficient to program the b16 interactively.
+On the host side, a few instructions are sufficient, too:
+
+\begin{description}
+\item [comp]Compile to the end of line, and send the result to the evaluation
+board
+\item [eval]Compile to the end of line, send the result to the evaluation
+board, call the code, and set the RAM pointer of the assembler back
+to the original value
+\item [sim]Same as \texttt{eval}, but execute the result with the simulator
+instead of using the evaluation board
+\item [check]( addr u --- ) Reads a memory block from the evaluation board,
+and display it with \texttt{dump}
+\end{description}
+
+\section{Outlook}
+
+More material is available from my home page \cite{web}. All sources
+are available under GPL. Data for producing a board is available,
+too. \noun{Hans Eckes} might make one for you, if you pay for it.
+And if someone wants to use the b16 commercially, talk to me.
+
+\begin{thebibliography}{1}
+\bibitem{c18}\emph{c18 ColorForth Compiler,} \noun{Chuck Moore}, $17^{\mathrm{th}}$
+EuroForth Conference Proceedings, 2001
+\bibitem{web}\emph{b16 Processor,} \noun{Bernd Paysan}, Internet Home page, http://www.jwdt.com/~paysan/b16.html \url{http://www.jwdt.com/~paysan/b16.html}\end{thebibliography}
+
+\end{document}

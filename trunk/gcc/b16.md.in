@@ -1,0 +1,156 @@
+;; Machine description for GNU compiler, b16 Version
+;; Copyright (C) 2003 Free Software Foundation, Inc.
+;; Contributed by Bernd Paysan (bernd.paysan@gmx.de)
+
+;; This file is part of GNU CC.
+
+;; GNU CC is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation; either version 2, or (at your option)
+;; any later version.
+
+;; GNU CC is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with GNU CC; see the file COPYING.  If not, write to
+;; the Free Software Foundation, 59 Temple Place - Suite 330,
+;; Boston, MA 02111-1307, USA.
+
+;; Move instructions.
+
+(define_insn "movsi"
+  [(set (match_operand:SI 0 "nonimmediate_operand" "=gD")
+        (match_operand:SI 1 "general_operand" "gS"))]
+  ""
+  "%S1 %R0")
+
+(define_insn "movqi"
+  [(set (match_operand:QI 0 "nonimmediate_operand" "=gD")
+        (match_operand:QI 1 "general_operand" "gS"))]
+  ""
+  "%S1 %R0")
+
+
+;; Arithmetic.
+
+define(inst3,
+(define_insn "$1si3"
+  [(set (match_operand:SI 0 "nonimmediate_operand" "=gD")
+        ($3:SI (match_operand:SI 1 "general_operand" "%gS")
+                 (match_operand:SI 2 "general_operand" "gS")))]
+  ""
+  "%S1 %S2 $2 %R0")
+
+)
+
+inst3(add,+,plus)
+inst3(sub,com +c,minus)
+inst3(ior,or,ior)
+inst3(and,and,and)
+inst3(xor,xor,xor)
+
+(define_insn "udivmodsi4"
+  [(set (match_operand:SI 0 "nonimmediate_operand" "=gD")
+	(div:SI (match_operand:QI 1 "general_operand" "r")
+		(match_operand:SI 2 "general_operand" "rI")))
+   (set (match_operand:SI 3 "nonimmediate_operand" "=gD")
+	(mod:SI (match_dup 1) (match_dup 2)))]
+  ""
+  "%S1 %S2 div %R3 %R0")
+
+(define_insn "udivsi3"
+  [(set (match_operand:SI 0 "nonimmediate_operand" "=gD")
+        (div:SI (match_operand:QI 1 "general_operand" "gS")
+                (match_operand:SI 2 "general_operand" "gS")))]
+  ""
+  "%S1 %S2 div drop %R0")
+
+(define_insn "umodsi3"
+  [(set (match_operand:SI 0 "nonimmediate_operand" "=gD")
+        (mod:SI (match_operand:QI 1 "general_operand" "gS")
+                (match_operand:SI 2 "general_operand" "gS")))]
+  ""
+  "%S1 %S2 div nip %R0")
+
+(define_insn "one_cmplsi2"
+  [(set (match_operand:SI 0 "nonimmediate_operand" "=gD")
+        (not:SI (match_operand:SI 1 "general_operand" "gS")))]
+  ""
+  "%S1 com %R0")
+
+(define_insn "one_cmplqi2"
+  [(set (match_operand:QI 0 "nonimmediate_operand" "=gD")
+        (not:QI (match_operand:SI 1 "general_operand" "gS")))]
+  ""
+  "%S1 com %R0")
+
+
+;; Basic conditional jump instructions.
+;; We ignore the overflow flag for signed branch instructions.
+
+;; For all bCOND expanders, also expand the compare or test insn that
+;; generates reg 17.  Generate an equality comparison if `beq' or `bne'.
+
+(define_insn "beq"
+  [(set (pc)
+	(if_then_else (eq (match_operand:SI 1 "general_operand" "gS")
+			  (const_int 0))
+		      (label_ref (match_operand 0 "" ""))
+		      (pc)))]
+  ""
+  "%S1 jeq %l0 ")
+
+(define_insn "bne"
+  [(set (pc)
+	(if_then_else (ne (match_operand:SI 1 "general_operand" "gS")
+			  (const_int 0))
+		      (label_ref (match_operand 0 "" ""))
+		      (pc)))]
+  ""
+  "%S1 jne %l0")
+
+
+(define_insn "return"
+  [(return)]
+  "reload_completed"
+  "ret")
+
+;; No-op instruction.
+
+(define_insn "nop"
+  [(const_int 0)]
+  ""
+  "nop")
+
+
+;; call instructions
+
+
+(define_insn "call"
+  [(call (label_ref (match_operand 0 "" ""))
+	 (match_operand 1 "" "g"))]
+  ""
+  "call %l0")
+
+(define_insn "indirect_call"
+  [(call (match_operand:SI 0 "general_operand" "gS")
+	 (match_operand 1 "" "g"))]
+  ""
+  "%S0 exec")
+
+
+;; Jump instructions
+
+(define_insn "jump"
+  [(set (pc) (label_ref (match_operand 0 "" "")))]
+  ""
+  "jmp %l0")
+
+(define_insn "indirect_jump"
+  [(set (pc) (match_operand:SI 0 "general_operand" "gS"))]
+  ""
+  "%S0 goto")
+
