@@ -180,7 +180,7 @@ macro: 2* \ macro for multiplication by two
     3 # blinkvar # !
     BEGIN
 	\ 6 times shift to the left
-	blinkl blinkl blinkl blinkl blinkl blinkl \ hi
+	blinkl blinkl blinkl blinkl blinkl blinkl
 	\ and 6 times shift to the right
 	blinkr blinkr blinkr blinkr blinkr blinkr
     AGAIN ;
