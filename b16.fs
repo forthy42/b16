@@ -82,7 +82,7 @@ Vocabulary b16-sim  also b16-sim definitions also Forth
   1 and $10 lshift A @ or  dup 1 and c ! 2/ A ! ;
 : /-   pop dup T + 1+  dup $10 rshift c @ or dup >r
   IF  nip  ELSE  drop  THEN  $10 lshift A @ or
-  dup $1F rshift c !  2* r> or  dup $FFFF A ! $10 rshift push ;
+  dup $1F rshift c !  2* r> or  dup $FFFF and A ! $10 rshift push ;
 
 \ Memory
 
@@ -145,7 +145,7 @@ Create i0
 
 : .inst cr P @ .v Inst @ 3 slot @ - 5 * rshift $1F and
     i0 slot @ 0 ?DO count + LOOP 1+ swap 2* 2* + 4 type space
-    pop pop dup push over push swap .v .v ;
+    T .v N .v A @ .v ;
 ' .inst IS <inst>
 
 previous previous
