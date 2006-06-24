@@ -27,6 +27,8 @@
 Variable Inst
 Variable P
 Variable A
+0 Value T
+0 Value N
 Variable c
 Variable sp  here &10 cells dup allot erase  2 sp !
 Variable rp  here   8 cells dup allot erase
@@ -43,12 +45,12 @@ $10000 allocate throw Value RAM  RAM $10000 erase
 
 \ Stack access
 
-: T ( -- n )  sp @ 1+ cells sp + @ ;
+: 3rd ( -- n )  sp @ 1+ cells sp + @ ;
 : R ( -- n )  rp @ 1+ cells rp + @ ;
-: ?sp ( -- )  sp @ &10 u> abort" Stack wrap" ;
+: ?sp ( -- )  sp @ 7 and sp ! ;
 : ?rp ( -- )  rp @ 8 u> abort" Rstack wrap" ;
-: pop ( -- n )  T  -1 sp +! ?sp ;
-: push ( n -- ) 1 sp +! ?sp sp @ 1+ cells sp + ! ;
+: pop ( -- n )  T  N to T  3rd to N  -1 sp +! ?sp ;
+: push ( n -- ) 1 sp +! ?sp  N sp @ 1+ cells sp + !  T to N  to T ;
 : rpop ( -- n )  R  -1 rp +! ?rp ;
 : rpush ( n -- ) 1 rp +! ?rp rp @ 1+ cells rp + ! ;
 
@@ -331,8 +333,8 @@ b16-asm also Forth
     IP @ >r prog r@ RAM + IP @ r@ - r> program ;
 : eval ( >defs -- )
     IP @ >r comp r@ exec r> org &20 wait ?in ;
-: sim  ( >defs -- )
-    IP @ >r prog r@ P ! ['] run catch r> org ;
+: sim  ( >defs -- )  rp off
+    IP @ >r prog r@ P ! ['] run catch r> org throw ;
 
 : asm-load ( -- )  b16-asm definitions include forth definitions ;
 
