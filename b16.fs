@@ -58,10 +58,10 @@ Vocabulary b16-sim  also b16-sim definitions also Forth
 
 : nop   ;
 : jmp   slot @ 3 = IF  pop P ! EXIT  THEN
-        1 3 slot @ - 5 * lshift 1- dup Inst @ and
-        swap invert P @ 2/ and or P ! 4 slot ! ;
-: call  P @ rpush jmp ;
-: ret   rpop P ! 4 slot ! ;
+        1 4 slot @ - 5 * lshift 1- dup Inst @ and
+        swap invert P @ 2/ and or 2* P ! 4 slot ! ;
+: call  P @ c @ 1 and or rpush jmp ;
+: ret   rpop dup 1 and c ! -2 and P ! 4 slot ! ;
 : jz    T 0= IF  jmp  THEN  4 slot ! ;
 : jnz   T 0<> IF  jmp  THEN  4 slot ! ;
 : jc    c @ IF  jmp  THEN  4 slot ! ;
@@ -92,9 +92,9 @@ Vocabulary b16-sim  also b16-sim definitions also Forth
 : Ac! pop A @ ramc! ;
 : Rc@ R ramc@ push ;
 : litc P @ ramc@ push 1 P +! ;
-: A@+ A@ 2 A +! ;
-: A!+ A! 2 A +! ;
-: R@+ R@ rpop 2 + rpush ;
+: A@+ A @ ram@ push 2 A +! ;
+: A!+ pop A @ ram! 2 A +! ;
+: R@+ R ram@ push rpop 2 + rpush ;
 : Ac@+ Ac@ 1 A +! ;
 : Ac!+ Ac! 1 A +! ;
 : Rc@+ Rc@ rpop 1 + rpush ;
@@ -120,8 +120,8 @@ Forth definitions
 
 : <jmps>  [ 8 ] jmps  nop call jmp ret jz jnz jc jnc
 : <ALUs>  [ 8 ] jmps  xor com and or add addc *+ /-
-: <mem+>  1 cycles +! [ 8 ] jmps  A@+ A!+ R@+ lit  Ac@+ Ac!+ Rc@+ litc
-: <mem>   1 cycles +! [ 8 ] jmps  A@  A!  R@  lit  Ac@  Ac!  Rc@  litc
+: <mem+>  1 cycles +! [ 8 ] jmps  A!+ A@+ R@+ lit  Ac!+ Ac@+ Rc@+ litc
+: <mem>   1 cycles +! [ 8 ] jmps  A!  A@  R@  lit  Ac!  Ac@  Rc@  litc
 : <stack> [ 8 ] jmps  nip drop over dup >r >a r> a
 : <op23> dup 3 rshift [ 4 ] jmps <jmps> <ALUs> <mem+> <stack>
 : <op1> dup 3 rshift [ 4 ] jmps <jmps> <ALUs> <mem> <stack>
@@ -142,7 +142,7 @@ Create i0
 ," nop execgotoret gz  gnz gc  gnc xor com and or  +   +c  *+  /-  A!+ A@+ R@+ lit Ac@+Ac!+Rc@+litcnip dropoverdup >r  >a  r>  a   "
 
 : .inst cr P @ .v Inst @ 3 slot @ - 5 * rshift $1F and
-    i0 slot @ 0 ?DO count + LOOP 1+ swap 4* + 4 type space
+    i0 slot @ 0 ?DO count + LOOP 1+ swap 2* 2* + 4 type space
     pop pop dup push over push swap .v .v ;
 ' .inst IS <inst>
 
@@ -303,7 +303,7 @@ include serial.fs
 dos also
 
 0 value b16
-: init ( -- )  s" /dev/b16" r/w bin open-file throw to b16
+: init ( -- )  s" /dev/ttyS0" r/w bin open-file throw to b16
     B115200 b16 filehandle @ set-baud ;
 
 : ?in ( -- )  pad b16 check-read b16 read-file throw pad swap type ;
@@ -340,6 +340,6 @@ previous Forth
 
 previous
 
-init
+\ init
 \ asm-load boot.asm
 
