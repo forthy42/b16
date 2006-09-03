@@ -1,6 +1,6 @@
 #! /usr/bin/gforth b16-asm.fs
 : reset			\ label reset
-    fw jmp		\ jump forward to boot
+   ' boot jmp		\ jump forward to boot
 : stack			\ stack test
     1 #c 2 #c 3 #	\ fill stack with 1 2 3 4 5 6 7 8 9 A B
     4 # 5 #c 6 #c
@@ -52,11 +52,12 @@
     0 # com      cIF  drop 5 # + THEN
     0 #c 0 #c + -cIF  drop 6 # + THEN
 ;			\ return to caller
-: boot THEN		\ resolve forward jump from reset
+: boot			\ resolve forward jump from reset
     stack		\ call stack test
     alu			\ call ALU test
     $1234 # $5678 # mul	\ multiply 1234 with 5678 (hex)
     $789a # div drop drop \ divide by 789A, drop results
     jumps -jumps	\ call jump tests
-    BEGIN jmp ;		\ endless loop
+;			\ endless loop
 .end			\ end of test program
+.hex

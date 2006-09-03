@@ -274,9 +274,35 @@ Forth
 : .end inst, ;
 : macro: : ;
 : end-macro postpone ; ; immediate
-: : Create  inst, IP @ , DOES> @ inst, 1 jmp, ;
-: | Create  inst, IP @ , DOES> @ ;
-: ' ' >body @ ;
+
+\ label handling
+: :-does DOES> @ inst, 1 jmp, ;
+: |-does DOES> @ ;
+: label-resolve ( addr -- )
+    cell+ @  BEGIN
+	dup -1 <> WHILE
+	    dup >r @ $FC00 [ b16-asm ] THEN [ Forth ] r> cell+ @
+    REPEAT  drop ;
+
+: ?Create >in @ >r name find  IF
+	rdrop  lastcfa !  inst,
+	IP @ lastcfa @ >body !
+	lastcfa @ >body label-resolve
+	lastcfa @ >body cell+ off
+    ELSE  drop r> >in ! Create inst, IP @ , 0 ,  THEN ;
+
+: : ?Create  :-does ;
+: | ?Create  |-does ;
+: ' ( "name" -- addr )
+    >in @ >r name find
+    IF  >body dup @ swap cell+
+	dup @ IF  here IP @ , over @ , swap !
+	    IP @ $FC00 and
+	ELSE  drop  THEN  rdrop
+    ELSE
+	drop r> >in !
+	Create 0 , here cell+ , IP @ $FC00 and dup , -1 , |-does
+    THEN ;
 
 $00 inst nop
 $01 2 insts3 exec goto
